@@ -11,5 +11,5 @@ wandb/
 __pycache__/
 *.log
 **/logs
-
+*.ckpt
 .ipynb_checkpoint
