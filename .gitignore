@@ -1,0 +1,15 @@
+
+
+.vscode/
+data/
+AE clustering/
+VADE/
+lightning_logs/
+trained_models/
+triplet VADE/
+wandb/
+__pycache__/
+*.log
+**/logs
+
+.ipynb_checkpoint
