@@ -6,7 +6,7 @@ AE clustering/
 VADE/
 lightning_logs/
 trained_models/
-triplet VADE/
+triplets_model VADE/
 wandb/
 __pycache__/
 *.log
