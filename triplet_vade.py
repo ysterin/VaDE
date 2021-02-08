@@ -33,10 +33,6 @@ class TripletDataset(IterableDataset):
         super(TripletDataset, self).__init__()
         assert len(data) == len(labels)
         self.seed = seed
-        # if transform is not None:
-        #     self.transform = transform
-        # else:
-        #     self.transform = transforms.Lambda(lambda x: x)
         self.rng = np.random.Generator(np.random.PCG64(seed=self.seed))
         if data_size and data_size < len(data):
             idxs = self.rng.choice(len(data), size=data_size, replace=False)
@@ -44,7 +40,6 @@ class TripletDataset(IterableDataset):
         self.data_size = len(data)
         self.data = data
         self.labels = labels
-
         self.label_set = list(set(labels.numpy()))
         self.data_dict = {lbl: [self.data[i] for i in range(self.data_size) if self.labels[i]==lbl] \
                             for lbl in self.label_set}
@@ -91,20 +86,34 @@ class CombinedDataset(Dataset):
         triplet = next(self.triplets_iterator)
         return (sample, triplet)
 
+def ifnone(x, val):
+    if x is None:
+        return val
+    return x
 
 class TripletVaDE(pl.LightningModule):
-    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=True, k=10, lr=1e-3, batch_size=256, device='cuda', 
-                 pretrain_epochs=50, pretrained_model=None, triplet_loss_alpha=1.):
+    def __init__(self, n_neurons=[784, 512, 256, 10],
+                 batch_norm=False,
+                 k=10, 
+                 lr=1e-3, 
+                 lr_gmm = None,
+                 batch_size=256, 
+                 device='cuda', 
+                 pretrain_epochs=50, 
+                 pretrained_model=None, 
+                 triplet_loss_margin=0.5,
+                 triplet_loss_alpha=1.,
+                 warmup_epochs=10):
         super(TripletVaDE, self).__init__()
         self.batch_size = batch_size
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
         pretrain_model, init_gmm = self.init_params(k, pretrained_model)
         self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, 
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
-        self.hparams = {'lr': lr}
-        self.triplet_loss_margin = 0.5
-        self.triplet_loss_margin_kl = 25
-        self.triplet_loss_alpha = triplet_loss_alpha
+        lr_gmm = ifnone(lr_gmm, lr)
+        self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
+        self.hparams['triplet_loss_margin_kl'] = 25
+        self.hparams['warmup_epochs'] = warmup_epochs
 
     def prepare_data(self):
         # transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
@@ -117,6 +126,16 @@ class TripletVaDE(pl.LightningModule):
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256))
         self.valid_triplet_ds = CombinedDataset(MNIST("data", download=True, train=False)) 
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256), seed=42)
+            
+#     def _prepare_data(self):
+#         transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x))])
+#         self.train_ds = MNIST("data", download=True, transform=transform)
+#         self.valid_ds = MNIST("data", download=True, transform=transform, train=False)
+#         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
+#         self.train_triplet_ds = CombinedDataset(self.train_ds, 
+#                                                 transform=transforms.Lambda(lambda x: torch.flatten(x)/255))
+#         self.valid_triplet_ds = CombinedDataset(self.valid_ds, 
+#                                                 transform=transforms.Lambda(lambda x: torch.flatten(x)/255), seed=42)
 
     def pretrain_model(self):
         n_neurons, pretrain_epochs, batch_norm = self.n_neurons, self.pretrain_epochs, self.batch_norm
@@ -145,9 +164,12 @@ class TripletVaDE(pl.LightningModule):
         return DataLoader(self.valid_triplet_ds, batch_size=self.batch_size, num_workers=8)
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), self.hparams['lr'], weight_decay=0.00)
+        opt = torch.optim.AdamW([{'params': self.model.model_params},
+                                 {'params': self.model.gmm_params, 'lr': self.hparams['lr_gmm']}], 
+                                self.hparams['lr'], weight_decay=0.00)
         # sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch: (epoch+1)/10 if epoch < 10 else 0.95**(epoch//10))
-        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch: 0.9**(epoch//10))
+        lr_rate_function = lambda epoch: min((epoch+1)/self.hparams['warmup_epochs'], 0.9**(epoch//10))
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_rate_function)
         return [opt], [sched]
 
     def triplet_loss(self, triplets_batch):
@@ -158,7 +180,7 @@ class TripletVaDE(pl.LightningModule):
         self.log('anchor_pos_distance', d1.mean(), logger=True)
         self.log('anchor_neg_distance', d2.mean(), logger=True)
         self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
-        loss = torch.relu(d1 - d2 + self.triplet_loss_margin).mean()
+        loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin']).mean()
         return loss
 
     def triplet_loss_kl(self, triplets_batch):
@@ -168,7 +190,7 @@ class TripletVaDE(pl.LightningModule):
         self.log('anchor_pos_distance_kl', d1.mean(), logger=True)
         self.log('anchor_neg_distance_kl', d2.mean(), logger=True)
         self.log('correct_triplet_pct_kl', (d1 < d2).float().mean()*100)
-        loss = torch.relu(d1 - d2 + self.triplet_loss_margin_kl).mean()
+        loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_kl']).mean()
         return loss
     
     def shared_step(self, batch, batch_idx):
@@ -176,7 +198,7 @@ class TripletVaDE(pl.LightningModule):
         result = self.model.shared_step(bx)
         result['triplet_loss'] = self.triplet_loss(triplets_batch)
         result['triplet_loss_kl'] = self.triplet_loss_kl(triplets_batch)
-        # result['loss'] += self.triplet_loss_alpha * result['triplet_loss']
+        result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
         for k, v in result.items():
             self.log(k, v, logger=True)
         return result

@@ -66,7 +66,7 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
             pl_module.log('ACC2', acc2, on_epoch=True)
 
 
-def get_autoencoder(n_neurons, batch_norm=True):
+def get_autoencoder(n_neurons, batch_norm=False):
     enc_layers = len(n_neurons)
     layer_dims = n_neurons + n_neurons[-2::-1]
     n_layers = len(layer_dims)
@@ -93,6 +93,9 @@ class LatentDistribution(nn.Module):
                 self.logvar_fc.bias.data.zero_()
             else:
                 self.logvar_fc = nn.Linear(in_features, out_features)
+                self.logvar_fc.weight.data.zero_()
+                self.logvar_fc.bias.data.zero_()
+#                 self.logvar_fc.bias.data += 1.0
         
     
     def forward(self, x):
@@ -244,7 +247,7 @@ class SimpleAutoencoder(pl.LightningModule):
 
 
 class VaDE(nn.Module):
-    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=True, k=10, lr=1e-3, device='cuda',
+    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, device='cuda',
                  pretrain_model=None, init_gmm=None, logger=None):
         super(VaDE, self).__init__()
         self.k = k
@@ -255,6 +258,7 @@ class VaDE(nn.Module):
         self.mixture_logits = nn.Parameter(torch.zeros(k, device=device))
         self.mu_c = nn.Parameter(torch.zeros(self.latent_dim, k, device=device))
         self.sigma_c = nn.Parameter(torch.ones(self.latent_dim, k, device=device))
+        self.gmm_params = [self.mixture_logits, self.mu_c, self.sigma_c]
         n_layers = len(n_neurons) - 1
         layers = list()
         for i in range(n_layers-1):
@@ -275,10 +279,11 @@ class VaDE(nn.Module):
                                         nn.ReLU(),
                                         nn.BatchNorm1d(n_neurons[i+1]) if batch_norm else nn.Identity()))
         self.decoder = nn.Sequential(*layers)
-        self.sigma = nn.Parameter(torch.ones(1)*np.sqrt(0.1), requires_grad=True)
+#         self.sigma = nn.Parameter(torch.ones(1)*np.sqrt(0.1), requires_grad=True)
         # self.sigma = 1
         # self.out_dist = LatentDistribution(n_neurons[-2], n_neurons[-1], same_sigma=True)
         self.out_dist = BernoulliDistribution(n_neurons[-2], n_neurons[-1])
+        self.model_params = list(self.encoder.parameters()) + list(self.latent_dist.parameters()) + list(self.decoder.parameters()) + list(self.out_dist.parameters())
         if pretrain_model is not None and init_gmm is not None:
             self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_))
             self.mu_c.data = torch.Tensor(init_gmm.means_.T)
