@@ -365,7 +365,8 @@ class VaDE(nn.Module):
             for bx, by in dl:
                 if torch.cuda.is_available():
                     bx = bx.cuda()
-                x_encoded = self.latent_dist(self.encoder(bx)).loc
+#                 x_encoded = self.latent_dist(self.encoder(bx)).loc
+                x_encoded = self.latent_dist(self.encoder(bx)).sample()
                 X_encoded.append(x_encoded)
                 true_labels.append(by)
                 log_p_z_given_c = vade_gmm.component_distribution.log_prob(x_encoded.unsqueeze(2)).sum(dim=1)
