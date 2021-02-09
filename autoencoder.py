@@ -46,24 +46,24 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
         super(ClusteringEvaluationCallback, self).__init__()
         self.on_start = on_start
         self.kwargs = kwargs
+        if 'ds_type' not in self.kwargs:
+            self.kwargs['ds_type'] = 'all'
+
+    def evaluate_clustering(self, trainer, pl_module):
+        gt, labels, _ = pl_module.cluster_data(**self.kwargs)
+        nmi, acc1, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(labels, gt), clustering_accuracy(gt, labels)
+        acc = cluster_acc(labels, gt)
+        pl_module.log(self.kwargs['ds_type'] + '_NMI', nmi, on_epoch=True)
+        pl_module.log(self.kwargs['ds_type'] + '_ACC', acc1, on_epoch=True)
+        pl_module.log(self.kwargs['ds_type'] + '_ACC2', acc2, on_epoch=True)
 
     def on_epoch_start(self, trainer, pl_module):
         if self.on_start:
-            gt, labels, _ = pl_module.cluster_data(**self.kwargs)
-            nmi, acc1, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(labels, gt), clustering_accuracy(gt, labels)
-            acc3 = cluster_acc(labels, gt)
-            pl_module.log('NMI', nmi, on_epoch=True)
-            pl_module.log('ACC1', acc1, on_epoch=True)
-            pl_module.log('ACC2', acc2, on_epoch=True)
+            self.evaluate_clustering(trainer, pl_module)
 
     def on_epoch_end(self, trainer, pl_module):
         if not self.on_start:
-            gt, labels, _ = pl_module.cluster_data(**self.kwargs)
-            nmi, acc1, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(labels, gt), clustering_accuracy(gt, labels)
-            acc3 = cluster_acc(labels, gt)
-            pl_module.log('NMI', nmi, on_epoch=True)
-            pl_module.log('ACC1', acc1, on_epoch=True)
-            pl_module.log('ACC2', acc2, on_epoch=True)
+            self.evaluate_clustering(trainer, pl_module)
 
 
 def get_autoencoder(n_neurons, batch_norm=False):
@@ -251,7 +251,7 @@ class VaDE(nn.Module):
                  pretrain_model=None, init_gmm=None, logger=None):
         super(VaDE, self).__init__()
         self.k = k
-        self.log = logger
+        self.logger = logger
         self.n_neurons, self.batch_norm = n_neurons, batch_norm
         self.hparams = {'lr': lr}
         self.latent_dim = n_neurons[-1]
@@ -293,7 +293,15 @@ class VaDE(nn.Module):
             self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
             # self.out_dist.mu_fc.load_state_dict(pretrain_model.decoder[-1].state_dict())
             self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
-            
+
+    def log(self, metric, value):
+        if self.eval():
+            self.logger('valid/' + metric, value)
+        elif self.train():
+            self.logger('train/' + metric, value)
+        else:
+            self.logger(metric, value)        
+    
     def forward(self, bx):
         x = self.encoder(bx)
         z_dist = self.latent_dist(x)
@@ -366,7 +374,7 @@ class VaDE(nn.Module):
                 if torch.cuda.is_available():
                     bx = bx.cuda()
 #                 x_encoded = self.latent_dist(self.encoder(bx)).loc
-                x_encoded = self.latent_dist(self.encoder(bx)).sample()
+                x_encoded = self.latent_dist(self.encoder(bx)).loc
                 X_encoded.append(x_encoded)
                 true_labels.append(by)
                 log_p_z_given_c = vade_gmm.component_distribution.log_prob(x_encoded.unsqueeze(2)).sum(dim=1)

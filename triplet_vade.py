@@ -86,6 +86,7 @@ class CombinedDataset(Dataset):
         triplet = next(self.triplets_iterator)
         return (sample, triplet)
 
+
 def ifnone(x, val):
     if x is None:
         return val
@@ -103,17 +104,22 @@ class TripletVaDE(pl.LightningModule):
                  pretrained_model=None, 
                  triplet_loss_margin=0.5,
                  triplet_loss_alpha=1.,
-                 warmup_epochs=10):
+                 triplet_loss_alpha_kl=0.,
+                 warmup_epochs=10,
+                 n_samples_for_triplets=1000):
         super(TripletVaDE, self).__init__()
         self.batch_size = batch_size
+        self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
+        self.hparams['triplet_loss_margin_kl'] = 25
+        self.hparams['batch_size'] = batch_size
+        self.hparams['triplet_loss_alpha_kl'] = triplet_loss_alpha_kl
+        self.hparams['warmup_epochs'] = warmup_epochs
+        self.hparams['n_samples_for_triplets'] = n_samples_for_triplets
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
         pretrain_model, init_gmm = self.init_params(k, pretrained_model)
         self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, 
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
         lr_gmm = ifnone(lr_gmm, lr)
-        self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
-        self.hparams['triplet_loss_margin_kl'] = 25
-        self.hparams['warmup_epochs'] = warmup_epochs
 
     def prepare_data(self):
         # transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
@@ -122,21 +128,11 @@ class TripletVaDE(pl.LightningModule):
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
-        self.train_triplet_ds = CombinedDataset(MNIST("data", download=True))
+        self.train_triplet_ds = CombinedDataset(MNIST("data", download=True), data_size=self.hparams['n_samples_for_triplets'])
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256))
-        self.valid_triplet_ds = CombinedDataset(MNIST("data", download=True, train=False)) 
+        self.valid_triplet_ds = CombinedDataset(MNIST("data", download=True, train=False), data_size=self.hparams['n_samples_for_triplets']) 
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256), seed=42)
             
-#     def _prepare_data(self):
-#         transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x))])
-#         self.train_ds = MNIST("data", download=True, transform=transform)
-#         self.valid_ds = MNIST("data", download=True, transform=transform, train=False)
-#         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
-#         self.train_triplet_ds = CombinedDataset(self.train_ds, 
-#                                                 transform=transforms.Lambda(lambda x: torch.flatten(x)/255))
-#         self.valid_triplet_ds = CombinedDataset(self.valid_ds, 
-#                                                 transform=transforms.Lambda(lambda x: torch.flatten(x)/255), seed=42)
-
     def pretrain_model(self):
         n_neurons, pretrain_epochs, batch_norm = self.n_neurons, self.pretrain_epochs, self.batch_norm
         self.prepare_data()
@@ -198,18 +194,33 @@ class TripletVaDE(pl.LightningModule):
         result = self.model.shared_step(bx)
         result['triplet_loss'] = self.triplet_loss(triplets_batch)
         result['triplet_loss_kl'] = self.triplet_loss_kl(triplets_batch)
-        result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
-        for k, v in result.items():
-            self.log(k, v, logger=True)
+        result['main_loss'] = result['loss'].detach().clone()
+        if self.hparams['triplet_loss_alpha'] > 0:
+            result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
+        if self.hparams['triplet_loss_alpha_kl'] > 0:
+            result['loss'] += self.hparams['triplet_loss_alpha_kl'] * result['triplet_loss_kl']
+        # import pdb; pdb.set_trace()
         return result
 
     def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, batch_idx)
+        result = self.shared_step(batch, batch_idx)
+        for k, v in result.items():
+            self.log('valid/' + k, v, logger=True)
+        return result
 
     def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, batch_idx)
+        result = self.shared_step(batch, batch_idx)
+        for k, v in result.items():
+            self.log('train/' + k, v, logger=True)
+        return result
 
-    def cluster_data(self, dl=None):
-        if not dl:
-            dl = DataLoader(self.all_ds, batch_size=1024, shuffle=False, num_workers=4)
+    def cluster_data(self, ds_type='all'):
+        if ds_type=='all':
+            dl = DataLoader(self.all_ds, batch_size=1024, shuffle=False, num_workers=8)
+        elif ds_type=='train':
+            dl = DataLoader(self.train_ds, batch_size=1024, shuffle=False, num_workers=8)
+        elif ds_type=='valid':
+            dl = DataLoader(self.valid_ds, batch_size=1024, shuffle=False, num_workers=8)
+        else:
+            raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
