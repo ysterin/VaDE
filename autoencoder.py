@@ -1,9 +1,10 @@
+from argparse import ArgumentError
 import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, IterableDataset, ConcatDataset, TensorDataset
-from torch import nn, distributions
+from torch.utils.data import DataLoader
+from torch import nn
 from torch.nn import functional as F
 from torch import distributions as D
 from torchvision.datasets import MNIST, FashionMNIST
@@ -51,11 +52,17 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
 
     def evaluate_clustering(self, trainer, pl_module):
         gt, labels, _ = pl_module.cluster_data(**self.kwargs)
-        nmi, acc1, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(labels, gt), clustering_accuracy(gt, labels)
+        nmi, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(gt, labels)
         acc = cluster_acc(labels, gt)
-        pl_module.log(self.kwargs['ds_type'] + '_NMI', nmi, on_epoch=True)
-        pl_module.log(self.kwargs['ds_type'] + '_ACC', acc1, on_epoch=True)
-        pl_module.log(self.kwargs['ds_type'] + '_ACC2', acc2, on_epoch=True)
+        ari = metrics.adjusted_rand_score(labels, gt)
+        prefix = self.kwargs['ds_type'] + '_'
+        if self.kwargs['ds_type'] == 'all':
+            prefix = ''
+        pl_module.log(prefix + 'NMI', nmi, on_epoch=True)
+        pl_module.log(prefix + 'ACC', acc, on_epoch=True)
+        pl_module.log(prefix + 'ACC2', acc2, on_epoch=True)
+        pl_module.log(prefix + 'ARI', ari, on_epoch=True)
+
 
     def on_epoch_start(self, trainer, pl_module):
         if self.on_start:
@@ -94,9 +101,7 @@ class LatentDistribution(nn.Module):
             else:
                 self.logvar_fc = nn.Linear(in_features, out_features)
                 self.logvar_fc.weight.data.zero_()
-                self.logvar_fc.bias.data.zero_()
-#                 self.logvar_fc.bias.data += 1.0
-        
+                self.logvar_fc.bias.data.zero_()        
     
     def forward(self, x):
         mu = self.mu_fc(x)
@@ -105,7 +110,7 @@ class LatentDistribution(nn.Module):
         else:
             logvar = self.logvar_fc(x)
             sigma = torch.exp(logvar / 2)
-        self.dist = Normal(mu, sigma)
+        self.dist = D.Independent(Normal(mu, sigma), 1)
         return self.dist
     
     def sample(self, l=1):
@@ -131,8 +136,16 @@ class BernoulliDistribution(nn.Module):
         return self.dist
 
 
+def normal_to_multivariate(p):
+    return D.MultivariateNormal(p.mean, scale_tril=torch.diag_embed(p.stddev))
+
 def cross_entropy(P, Q):
-    return kl_divergence(P, Q) + P.entropy()
+    try:
+        return kl_divergence(P, Q) + P.entropy()
+    except NotImplementedError:
+        if type(P) == D.Independent and type(P.base_dist) == D.Normal:
+            return kl_divergence(normal_to_multivariate(P), Q) + P.entropy()
+        raise NotImplementedError
 
 def kl_distance(P, Q):
     return 0.5 * (kl_divergence(P, Q) + kl_divergence(Q, P))
@@ -177,13 +190,12 @@ class SimpleAutoencoder(pl.LightningModule):
         z = self.encoder(bx)
         out = self.decoder(z)
         loss = F.mse_loss(out, bx)
-        # bce_loss = F.binary_cross_entropy(torch.clamp(out, 1e-6, 1 - 1e-6), bx, reduction='mean')
         bce_loss = F.binary_cross_entropy(out, bx, reduction='mean')
         self.log('loss', loss)
         self.log('bce_loss', bce_loss)
-        lmbda = 0.00
-        reg = lmbda * (z**2).mean()
-        self.log('regularization', reg)
+        # lmbda = 0.00
+        # reg = lmbda * (z**2).mean()
+        # self.log('regularization', reg)
         return bce_loss
     
     def training_step(self, batch, batch_idx):
@@ -230,7 +242,7 @@ class SimpleAutoencoder(pl.LightningModule):
         kmeans = KMeans(k)
         return kmeans.fit_predict(X)
 
-    def cluster_data(self, dl=None, method='gmm-diag', n_init=3):
+    def cluster_data(self, dl=None, method='gmm-full', n_init=3, ds_type=None):
         self.eval()
         if not dl:
             dl = self.val_dataloader()
@@ -240,6 +252,8 @@ class SimpleAutoencoder(pl.LightningModule):
             clustering_algo = GaussianMixture(n_components=self.k, covariance_type='full', n_init=n_init)
         elif method == 'gmm-diag':
             clustering_algo = GaussianMixture(n_components=self.k, covariance_type='diag', n_init=n_init)
+        else:
+            raise ArgumentError(f"Incorrect methpd arg {method}, can only be one of 'kmeans', 'gmm-full', or 'gmm-diag'")
         X_encoded, true_labels = self.encode_dl(dl)
         # import pdb; pdb.set_trace()
         predicted_labels = clustering_algo.fit_predict(X_encoded)
@@ -248,17 +262,26 @@ class SimpleAutoencoder(pl.LightningModule):
 
 class VaDE(nn.Module):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, device='cuda',
-                 pretrain_model=None, init_gmm=None, logger=None):
+                 pretrain_model=None, init_gmm=None, logger=None, covariance_type='diag'):
         super(VaDE, self).__init__()
         self.k = k
         self.logger = logger
+        self.covariance_type = covariance_type
         self.n_neurons, self.batch_norm = n_neurons, batch_norm
         self.hparams = {'lr': lr}
         self.latent_dim = n_neurons[-1]
         self.mixture_logits = nn.Parameter(torch.zeros(k, device=device))
-        self.mu_c = nn.Parameter(torch.zeros(self.latent_dim, k, device=device))
-        self.sigma_c = nn.Parameter(torch.ones(self.latent_dim, k, device=device))
-        self.gmm_params = [self.mixture_logits, self.mu_c, self.sigma_c]
+        self.mu_c = nn.Parameter(torch.zeros(k, self.latent_dim, device=device))
+        if self.covariance_type == 'diag':
+            self.sigma_c = nn.Parameter(torch.ones(k, self.latent_dim, device=device))
+            self.gmm_params = [self.mixture_logits, self.mu_c, self.sigma_c]
+        elif self.covariance_type == 'full':
+            self.scale_tril_c = nn.Parameter(torch.eye(self.latent_dim).repeat((k, 1, 1)))
+            self.gmm_params = [self.mixture_logits, self.mu_c, self.scale_tril_c]
+        else:
+            raise Exception(f"illigal covariance_type {covariance_type}, can only be 'full' or 'diag'")
+        # self.sigma_c = nn.Parameter(torch.ones(self.latent_dim, k, device=device))
+        # self.gmm_params = [self.mixture_logits, self.mu_c, self.sigma_c]
         n_layers = len(n_neurons) - 1
         layers = list()
         for i in range(n_layers-1):
@@ -279,28 +302,28 @@ class VaDE(nn.Module):
                                         nn.ReLU(),
                                         nn.BatchNorm1d(n_neurons[i+1]) if batch_norm else nn.Identity()))
         self.decoder = nn.Sequential(*layers)
-#         self.sigma = nn.Parameter(torch.ones(1)*np.sqrt(0.1), requires_grad=True)
-        # self.sigma = 1
-        # self.out_dist = LatentDistribution(n_neurons[-2], n_neurons[-1], same_sigma=True)
         self.out_dist = BernoulliDistribution(n_neurons[-2], n_neurons[-1])
         self.model_params = list(self.encoder.parameters()) + list(self.latent_dist.parameters()) + list(self.decoder.parameters()) + list(self.out_dist.parameters())
         if pretrain_model is not None and init_gmm is not None:
             self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_))
-            self.mu_c.data = torch.Tensor(init_gmm.means_.T)
-            self.sigma_c.data = torch.Tensor(init_gmm.covariances_.T).sqrt()
+            self.mu_c.data = torch.Tensor(init_gmm.means_)
+            # self.sigma_c.data = torch.Tensor(init_gmm.covariances_.T).sqrt()
+            if self.covariance_type == 'diag':
+                self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt()
+            elif self.covariance_type == 'full':
+                self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1)))
             self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
             self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
             self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
-            # self.out_dist.mu_fc.load_state_dict(pretrain_model.decoder[-1].state_dict())
             self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
 
-    def log(self, metric, value):
-        if self.eval():
-            self.logger('valid/' + metric, value)
-        elif self.train():
-            self.logger('train/' + metric, value)
+    def log(self, metric, value, **kwargs):
+        if self.training:
+            self.logger('train/' + metric, value, **kwargs)
         else:
-            self.logger(metric, value)        
+            self.logger('valid/' + metric, value, **kwargs)
+        # else:
+        #     self.logger(metric, value, **kwargs)        
     
     def forward(self, bx):
         x = self.encoder(bx)
@@ -319,35 +342,61 @@ class VaDE(nn.Module):
         x = self.encoder(bx)
         return self.latent_dist(x)
 
+    @property
+    def component_distribution(self):
+        if self.covariance_type == 'diag':
+            return D.Independent(D.Normal(self.mu_c, self.sigma_c), 1)
+        elif self.covariance_type == 'full':
+            return D.MultivariateNormal(self.mu_c, scale_tril=self.scale_tril_c)
+
+    @property 
+    def comp_dists(self):
+        if self.covariance_type == 'diag':
+            return [D.Independent(D.Normal(self.mu_c[i], self.sigma_c[i]), 1) for i in range(self.k)]
+        elif self.covariance_type == 'full':
+            return  [D.MultivariateNormal(self.mu_c[i], scale_tril=self.scale_tril_c[i]) for i in range(self.k)]
+    
     def shared_step(self, bx):
         x = self.encoder(bx)
         z_dist = self.latent_dist(x)
-        if z_dist.scale.max() > 100:
+        if z_dist.stddev.max() > 100:
             import pdb; pdb.set_trace()
-        self.log("latent dist std", z_dist.scale.mean().detach())
+        self.log("latent dist std", z_dist.stddev.mean().detach())
         z = z_dist.rsample()
         x_dist = self.out_dist(self.decoder(z))
         x_recon_loss = - x_dist.log_prob(bx).sum(dim=-1)
         # bce_loss = F.binary_cross_entropy(torch.clamp(x_dist.mean, 1e-6, 1.0-1e-6), bx)
         bce_loss = F.binary_cross_entropy(x_dist.mean, bx, reduction='mean')
         ###################################
-        
-        comp_dists = [D.Normal(self.mu_c[:,i], self.sigma_c[:,i]) for i in range(self.k)]
-        gmm = D.MixtureSameFamily(D.Categorical(logits=self.mixture_logits), D.Normal(self.mu_c, self.sigma_c))
-        log_p_z_c = gmm.component_distribution.log_prob(z.unsqueeze(-1)).sum(dim=1)
+
+        log_p_z_c = self.component_distribution.log_prob(z.unsqueeze(1))
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
         q_c_z = log_q_c_z.exp()
-        cross_entropies = torch.stack([cross_entropy(z_dist, comp_dists[i]).sum(dim=1) for i in range(self.k)], dim=-1)
+        cross_entropies = torch.stack([cross_entropy(z_dist, self.comp_dists[i]) for i in range(self.k)], dim=-1)
+        ent_loss1 = z_dist.entropy()
         crosent_loss1 = - (cross_entropies * q_c_z).sum(dim=-1)
-        crosent_loss2 = (q_c_z * (gmm.mixture_distribution.probs[None] + 1e-9).log()).sum(dim=-1)
-        ent_loss1 = z_dist.entropy().sum(dim=-1)
+        if crosent_loss1.mean() < -300:
+            import pdb; pdb.set_trace()
+        crosent_loss2 = (q_c_z * (self.mixture_logits.softmax(dim=0)[None] + 1e-9).log()).sum(dim=-1)
         ent_loss2 = - (q_c_z * log_q_c_z).sum(dim=-1)
+
+        
+        # comp_dists = [D.Normal(self.mu_c[:,i], self.sigma_c[:,i]) for i in range(self.k)]
+        # gmm = D.MixtureSameFamily(D.Categorical(logits=self.mixture_logits), D.Normal(self.mu_c, self.sigma_c))
+        # log_p_z_c = gmm.component_distribution.log_prob(z.unsqueeze(-1)).sum(dim=1)
+        # log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
+        # q_c_z = log_q_c_z.exp()
+        # cross_entropies = torch.stack([cross_entropy(z_dist, comp_dists[i]).sum(dim=1) for i in range(self.k)], dim=-1)
+        # crosent_loss1 = - (cross_entropies * q_c_z).sum(dim=-1)
+        # crosent_loss2 = (q_c_z * (gmm.mixture_distribution.probs[None] + 1e-9).log()).sum(dim=-1)
+        # ent_loss1 = z_dist.entropy().sum(dim=-1)
+        # ent_loss2 = - (q_c_z * log_q_c_z).sum(dim=-1)
 
         self.log('ent_loss1', - ent_loss1.mean(), logger=True)
         self.log('crosent_loss1', - crosent_loss1.mean(), logger=True)
         self.log('ent_loss2', - ent_loss2.mean(), logger=True)
         self.log('crosent_loss2', - crosent_loss2.mean(), logger=True)
-        self.log('gmm likelihood', - gmm.log_prob(z).mean())
+        # self.log('gmm likelihood', - gmm.log_prob(z).mean())
 
         ############################################################################
         kl_loss = - crosent_loss1 - crosent_loss2 - ent_loss1 - ent_loss2
@@ -365,23 +414,35 @@ class VaDE(nn.Module):
 
     def cluster_data(self, dl=None):
         self.eval()
-        vade_gmm = D.MixtureSameFamily(D.Categorical(logits=self.mixture_logits), D.Normal(self.mu_c, self.sigma_c))
-        true_labels = []
-        predicted_labels = []
-        X_encoded = []
+        true_labels, predicted_labels, X_encoded = [], [], []
         with torch.no_grad():
             for bx, by in dl:
-                if torch.cuda.is_available():
-                    bx = bx.cuda()
-#                 x_encoded = self.latent_dist(self.encoder(bx)).loc
-                x_encoded = self.latent_dist(self.encoder(bx)).loc
+                x_encoded = self.latent_dist(self.encoder(bx.cuda())).mean
                 X_encoded.append(x_encoded)
                 true_labels.append(by)
-                log_p_z_given_c = vade_gmm.component_distribution.log_prob(x_encoded.unsqueeze(2)).sum(dim=1)
-                predicted_labels.append((log_p_z_given_c + vade_gmm.mixture_distribution.logits).softmax(dim=-1).argmax(dim=-1))
-                
+                log_p_z_given_c = self.component_distribution.log_prob(x_encoded.unsqueeze(1))
+                predicted_labels.append((log_p_z_given_c + self.mixture_logits).softmax(dim=-1).argmax(dim=-1))
         true_labels = torch.cat(true_labels).cpu().numpy()
         predicted_labels = torch.cat(predicted_labels).cpu().numpy()
         X_encoded = torch.cat(X_encoded).cpu().numpy()
         return true_labels, predicted_labels, X_encoded
+#         vade_gmm = D.MixtureSameFamily(D.Categorical(logits=self.mixture_logits), D.Normal(self.mu_c, self.sigma_c))
+#         true_labels = []
+#         predicted_labels = []
+#         X_encoded = []
+#         with torch.no_grad():
+#             for bx, by in dl:
+#                 if torch.cuda.is_available():
+#                     bx = bx.cuda()
+# #                 x_encoded = self.latent_dist(self.encoder(bx)).loc
+#                 x_encoded = self.latent_dist(self.encoder(bx)).loc
+#                 X_encoded.append(x_encoded)
+#                 true_labels.append(by)
+#                 log_p_z_given_c = vade_gmm.component_distribution.log_prob(x_encoded.unsqueeze(2)).sum(dim=1)
+#                 predicted_labels.append((log_p_z_given_c + vade_gmm.mixture_distribution.logits).softmax(dim=-1).argmax(dim=-1))
+                
+#         true_labels = torch.cat(true_labels).cpu().numpy()
+#         predicted_labels = torch.cat(predicted_labels).cpu().numpy()
+#         X_encoded = torch.cat(X_encoded).cpu().numpy()
+#         return true_labels, predicted_labels, X_encoded
 

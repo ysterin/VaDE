@@ -21,8 +21,16 @@ from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
 
+def normal_to_multivariate(p):
+    return D.MultivariateNormal(p.mean, scale_tril=torch.diag_embed(p.stddev))
+
 def cross_entropy(P, Q):
-    return kl_divergence(P, Q) + P.entropy()
+    try:
+        return kl_divergence(P, Q) + P.entropy()
+    except NotImplementedError:
+        if type(P) == D.Independent and type(P.base_dist) == D.Normal:
+            return kl_divergence(normal_to_multivariate(P), Q) + P.entropy()
+        raise NotImplementedError
 
 def kl_distance(P, Q):
     return 0.5 * (kl_divergence(P, Q) + kl_divergence(Q, P))
@@ -108,6 +116,7 @@ class TripletVaDE(pl.LightningModule):
                  warmup_epochs=10,
                  n_samples_for_triplets=1000):
         super(TripletVaDE, self).__init__()
+        self.save_hyperparameters()
         self.batch_size = batch_size
         self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
         self.hparams['triplet_loss_margin_kl'] = 25
