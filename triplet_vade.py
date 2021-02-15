@@ -78,8 +78,10 @@ class TripletDataset(IterableDataset):
 class CombinedDataset(Dataset):
     def __init__(self, dataset, transform=None, data_size=None, max_samples=None, seed=None):
         super(CombinedDataset, self).__init__()
-        self.data = dataset.data.view(-1, 28**2).float() / 255.0
-        self.triplet_dataset = TripletDataset(self.data, dataset.targets, transform, data_size, max_samples=len(dataset), seed=seed)
+        # self.data = dataset.data.view(-1, 28**2).float() / 255.0
+        self.data = torch.stack([dataset[i][0] for i in range(len(dataset))], dim=0)
+        targets = torch.stack([dataset[i][1] for i in range(len(dataset))], dim=0)
+        self.triplet_dataset = TripletDataset(self.data, targets, transform, data_size, max_samples=len(dataset), seed=seed)
         self.triplets_iterator = iter(self.triplet_dataset)
     
     def __len__(self):
@@ -110,6 +112,8 @@ class TripletVaDE(pl.LightningModule):
                  device='cuda', 
                  pretrain_epochs=50, 
                  pretrained_model=None, 
+                 covariance_type='diag',
+                 data_size=None,
                  triplet_loss_margin=0.5,
                  triplet_loss_alpha=1.,
                  triplet_loss_alpha_kl=0.,
@@ -126,7 +130,7 @@ class TripletVaDE(pl.LightningModule):
         self.hparams['n_samples_for_triplets'] = n_samples_for_triplets
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
         pretrain_model, init_gmm = self.init_params(k, pretrained_model)
-        self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, 
+        self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, covariance_type=covariance_type,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
         lr_gmm = ifnone(lr_gmm, lr)
 
@@ -136,10 +140,16 @@ class TripletVaDE(pl.LightningModule):
         self.valid_ds = MNIST("data", download=True, train=False)
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
+        if self.hparams['data_size'] is not None:
+            n_sample = self.hparams['data_size']
+            to_subset = lambda ds: torch.utils.data.random_split(ds, 
+                                                                 [n_sample, len(ds) - n_sample],
+                                                                 torch.Generator().manual_seed(42))[0]
+            self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
-        self.train_triplet_ds = CombinedDataset(MNIST("data", download=True), data_size=self.hparams['n_samples_for_triplets'])
+        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'])
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256))
-        self.valid_triplet_ds = CombinedDataset(MNIST("data", download=True, train=False), data_size=self.hparams['n_samples_for_triplets']) 
+        self.valid_triplet_ds = CombinedDataset(self.valid_ds, data_size=self.hparams['n_samples_for_triplets']) 
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256), seed=42)
             
     def pretrain_model(self):
@@ -156,9 +166,9 @@ class TripletVaDE(pl.LightningModule):
     def init_params(self, k, pretrained_model=None):
         if not pretrained_model:
             pretrained_model = self.pretrain_model()
-        transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
+        # transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
         X_encoded = pretrained_model.encode_ds(self.all_ds)
-        init_gmm = GaussianMixture(k, covariance_type='diag', n_init=5)
+        init_gmm = GaussianMixture(k, covariance_type=self.hparams['covariance_type'], n_init=3)
         init_gmm.fit(X_encoded)
         return pretrained_model, init_gmm
         

@@ -139,6 +139,14 @@ class BernoulliDistribution(nn.Module):
 def normal_to_multivariate(p):
     return D.MultivariateNormal(p.mean, scale_tril=torch.diag_embed(p.stddev))
 
+def _kl_divergence(p, q):
+    try:
+        return kl_divergence(p, q)
+    except NotImplementedError:
+        if type(p) == D.Independent and type(p.base_dist) == D.Normal:
+            return kl_divergence(normal_to_multivariate(p), q)
+
+
 def cross_entropy(P, Q):
     try:
         return kl_divergence(P, Q) + P.entropy()
@@ -372,34 +380,12 @@ class VaDE(nn.Module):
         log_p_z_c = self.component_distribution.log_prob(z.unsqueeze(1))
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
         q_c_z = log_q_c_z.exp()
-        cross_entropies = torch.stack([cross_entropy(z_dist, self.comp_dists[i]) for i in range(self.k)], dim=-1)
-        ent_loss1 = z_dist.entropy()
-        crosent_loss1 = - (cross_entropies * q_c_z).sum(dim=-1)
-        if crosent_loss1.mean() < -300:
-            import pdb; pdb.set_trace()
-        crosent_loss2 = (q_c_z * (self.mixture_logits.softmax(dim=0)[None] + 1e-9).log()).sum(dim=-1)
-        ent_loss2 = - (q_c_z * log_q_c_z).sum(dim=-1)
 
+        kl_divergences = torch.stack([_kl_divergence(z_dist, self.comp_dists[i]) for i in range(self.k)], dim=-1)
+        kl_div1 = torch.einsum('ij,ij->i', kl_divergences, q_c_z)
+        kl_div2 = torch.einsum('ij,ij->i', q_c_z, log_q_c_z - self.mixture_logits.log_softmax(dim=-1))
+        kl_loss = kl_div1 + kl_div2
         
-        # comp_dists = [D.Normal(self.mu_c[:,i], self.sigma_c[:,i]) for i in range(self.k)]
-        # gmm = D.MixtureSameFamily(D.Categorical(logits=self.mixture_logits), D.Normal(self.mu_c, self.sigma_c))
-        # log_p_z_c = gmm.component_distribution.log_prob(z.unsqueeze(-1)).sum(dim=1)
-        # log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
-        # q_c_z = log_q_c_z.exp()
-        # cross_entropies = torch.stack([cross_entropy(z_dist, comp_dists[i]).sum(dim=1) for i in range(self.k)], dim=-1)
-        # crosent_loss1 = - (cross_entropies * q_c_z).sum(dim=-1)
-        # crosent_loss2 = (q_c_z * (gmm.mixture_distribution.probs[None] + 1e-9).log()).sum(dim=-1)
-        # ent_loss1 = z_dist.entropy().sum(dim=-1)
-        # ent_loss2 = - (q_c_z * log_q_c_z).sum(dim=-1)
-
-        self.log('ent_loss1', - ent_loss1.mean(), logger=True)
-        self.log('crosent_loss1', - crosent_loss1.mean(), logger=True)
-        self.log('ent_loss2', - ent_loss2.mean(), logger=True)
-        self.log('crosent_loss2', - crosent_loss2.mean(), logger=True)
-        # self.log('gmm likelihood', - gmm.log_prob(z).mean())
-
-        ############################################################################
-        kl_loss = - crosent_loss1 - crosent_loss2 - ent_loss1 - ent_loss2
         loss = x_recon_loss + kl_loss
 
         if loss.isnan().any():
@@ -408,7 +394,9 @@ class VaDE(nn.Module):
         result = {'loss': loss.mean(),
                   'x_recon_loss': x_recon_loss.mean(),
                   'kl_loss': kl_loss.mean(),
-                  'bce_loss': bce_loss.mean()}
+                  'bce_loss': bce_loss.mean(), 
+                  'kl_div_mixture': kl_div2.mean(), 
+                  'kl_div_components': kl_div1.mean()}
                 #   'z_dist': z_dist, 'z': z}
         return result
 
@@ -426,23 +414,3 @@ class VaDE(nn.Module):
         predicted_labels = torch.cat(predicted_labels).cpu().numpy()
         X_encoded = torch.cat(X_encoded).cpu().numpy()
         return true_labels, predicted_labels, X_encoded
-#         vade_gmm = D.MixtureSameFamily(D.Categorical(logits=self.mixture_logits), D.Normal(self.mu_c, self.sigma_c))
-#         true_labels = []
-#         predicted_labels = []
-#         X_encoded = []
-#         with torch.no_grad():
-#             for bx, by in dl:
-#                 if torch.cuda.is_available():
-#                     bx = bx.cuda()
-# #                 x_encoded = self.latent_dist(self.encoder(bx)).loc
-#                 x_encoded = self.latent_dist(self.encoder(bx)).loc
-#                 X_encoded.append(x_encoded)
-#                 true_labels.append(by)
-#                 log_p_z_given_c = vade_gmm.component_distribution.log_prob(x_encoded.unsqueeze(2)).sum(dim=1)
-#                 predicted_labels.append((log_p_z_given_c + vade_gmm.mixture_distribution.logits).softmax(dim=-1).argmax(dim=-1))
-                
-#         true_labels = torch.cat(true_labels).cpu().numpy()
-#         predicted_labels = torch.cat(predicted_labels).cpu().numpy()
-#         X_encoded = torch.cat(X_encoded).cpu().numpy()
-#         return true_labels, predicted_labels, X_encoded
-
