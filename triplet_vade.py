@@ -35,6 +35,12 @@ def cross_entropy(P, Q):
 def kl_distance(P, Q):
     return 0.5 * (kl_divergence(P, Q) + kl_divergence(Q, P))
 
+def split_dist(dist, n=3):
+    bs = dist.mean.shape[0] // n
+    if isinstance(dist, D.Independent):
+        if isinstance(dist.base_dist, D.Normal):
+            return [D.Independent(D.Normal(loc, scale), 1) for loc, scale in list(zip(dist.base_dist.loc.split(bs), dist.base_dist.scale.split(bs)))]
+
 
 class TripletDataset(IterableDataset):
     def __init__(self, data, labels, transform=None, data_size=None, max_samples=None, seed=None):
@@ -78,7 +84,6 @@ class TripletDataset(IterableDataset):
 class CombinedDataset(Dataset):
     def __init__(self, dataset, transform=None, data_size=None, max_samples=None, seed=None):
         super(CombinedDataset, self).__init__()
-        # self.data = dataset.data.view(-1, 28**2).float() / 255.0
         self.data = torch.stack([dataset[i][0] for i in range(len(dataset))], dim=0)
         targets = torch.stack([dataset[i][1] for i in range(len(dataset))], dim=0)
         self.triplet_dataset = TripletDataset(self.data, targets, transform, data_size, max_samples=len(dataset), seed=seed)
@@ -111,25 +116,28 @@ class TripletVaDE(pl.LightningModule):
                  batch_size=256, 
                  device='cuda', 
                  pretrain_epochs=50, 
-                 pretrained_model=None, 
+                 pretrained_model_file=None, 
                  covariance_type='diag',
                  data_size=None,
                  triplet_loss_margin=0.5,
                  triplet_loss_alpha=1.,
+                 triplet_loss_margin_kl=20, 
                  triplet_loss_alpha_kl=0.,
                  warmup_epochs=10,
                  n_samples_for_triplets=1000):
         super(TripletVaDE, self).__init__()
         self.save_hyperparameters()
+        if lr_gmm is None:
+            self.hparams['lr_gmm'] = lr
         self.batch_size = batch_size
-        self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
-        self.hparams['triplet_loss_margin_kl'] = 25
-        self.hparams['batch_size'] = batch_size
-        self.hparams['triplet_loss_alpha_kl'] = triplet_loss_alpha_kl
-        self.hparams['warmup_epochs'] = warmup_epochs
-        self.hparams['n_samples_for_triplets'] = n_samples_for_triplets
+        # self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
+        # self.hparams['triplet_loss_margin_kl'] = 25
+        # self.hparams['batch_size'] = batch_size
+        # self.hparams['triplet_loss_alpha_kl'] = triplet_loss_alpha_kl
+        # self.hparams['warmup_epochs'] = warmup_epochs
+        # self.hparams['n_samples_for_triplets'] = n_samples_for_triplets
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
-        pretrain_model, init_gmm = self.init_params(k, pretrained_model)
+        pretrain_model, init_gmm = self.init_params(k, pretrained_model_file)
         self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, covariance_type=covariance_type,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
         lr_gmm = ifnone(lr_gmm, lr)
@@ -163,9 +171,16 @@ class TripletVaDE(pl.LightningModule):
         trainer.fit(pretrained_model)
         return pretrained_model
     
-    def init_params(self, k, pretrained_model=None):
-        if not pretrained_model:
+    def init_params(self, k, pretrained_model_file=None):
+        if not pretrained_model_file:
             pretrained_model = self.pretrain_model()
+        else:
+            pretrained_model = SimpleAutoencoder(self.n_neurons, batch_norm=self.batch_norm)
+            state_dict = torch.load(pretrained_model_file)
+            if 'state_dict' in state_dict:
+                state_dict = state_dict['state_dict']
+            pretrained_model.load_state_dict(state_dict)
+            self.prepare_data()
         # transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
         X_encoded = pretrained_model.encode_ds(self.all_ds)
         init_gmm = GaussianMixture(k, covariance_type=self.hparams['covariance_type'], n_init=3)
@@ -187,38 +202,85 @@ class TripletVaDE(pl.LightningModule):
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_rate_function)
         return [opt], [sched]
 
-    def triplet_loss(self, triplets_batch):
-        anchor_z, pos_z, neg_z = map(lambda s: self.model.encode(triplets_batch[s]).sample(), 
-                                     ['anchor', 'positive', 'negative'])
+    def triplet_loss(self, anchor_z_dist, pos_z_dist, neg_z_dist):
+        anchor_z, pos_z, neg_z = anchor_z_dist.mean, pos_z_dist.mean, neg_z_dist.mean
         anchor_z, pos_z, neg_z = map(lambda t: t / t.norm(dim=1, keepdim=True), [anchor_z, pos_z, neg_z])
         d1, d2 = torch.linalg.norm(anchor_z - pos_z, dim=1), torch.linalg.norm(anchor_z - neg_z, dim=1)
-        self.log('anchor_pos_distance', d1.mean(), logger=True)
-        self.log('anchor_neg_distance', d2.mean(), logger=True)
-        self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
+        results = {}
+        results['anchor_pos_distance'] = d1.mean()
+        results['anchor_neg_distance'] = d2.mean()
+        results['correct_triplet_pct'] = (d1 < d2).float().mean()*100
+        # self.log('anchor_pos_distance', d1.mean(), logger=True)
+        # self.log('anchor_neg_distance', d2.mean(), logger=True)
+        # self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
         loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin']).mean()
-        return loss
+        results['triplet_loss'] = loss
+        return results
 
-    def triplet_loss_kl(self, triplets_batch):
-        anchor_z_dist, pos_z_dist, neg_z_dist = map(lambda s: self.model.encode(triplets_batch[s]), 
-                                                    ['anchor', 'positive', 'negative'])
+    def triplet_loss_kl(self, anchor_z_dist, pos_z_dist, neg_z_dist):
         d1, d2 = kl_distance(anchor_z_dist, pos_z_dist), kl_distance(anchor_z_dist, neg_z_dist)
-        self.log('anchor_pos_distance_kl', d1.mean(), logger=True)
-        self.log('anchor_neg_distance_kl', d2.mean(), logger=True)
-        self.log('correct_triplet_pct_kl', (d1 < d2).float().mean()*100)
+        results = {}
+        results['anchor_pos_distance_kl'] = d1.mean()
+        results['anchor_neg_distance_kl'] = d2.mean()
+        results['correct_triplet_pct_kl'] = (d1 < d2).float().mean()*100
+        # self.log('anchor_pos_distance', d1.mean(), logger=True)
+        # self.log('anchor_neg_distance', d2.mean(), logger=True)
+        # self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
         loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_kl']).mean()
-        return loss
+        results['triplet_loss_kl'] = loss
+        return results
+
+    # def triplet_loss(self, triplets_batch):
+    #     anchor_z, pos_z, neg_z = map(lambda s: self.model.encode(triplets_batch[s]).mean, 
+    #                                  ['anchor', 'positive', 'negative'])
+    #     anchor_z, pos_z, neg_z = map(lambda t: t / t.norm(dim=1, keepdim=True), [anchor_z, pos_z, neg_z])
+    #     d1, d2 = torch.linalg.norm(anchor_z - pos_z, dim=1), torch.linalg.norm(anchor_z - neg_z, dim=1)
+    #     self.log('anchor_pos_distance', d1.mean(), logger=True)
+    #     self.log('anchor_neg_distance', d2.mean(), logger=True)
+    #     self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
+    #     loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin']).mean()
+    #     return loss
+
+    # def triplet_loss_kl(self, triplets_batch):
+    #     anchor_z_dist, pos_z_dist, neg_z_dist = map(lambda s: self.model.encode(triplets_batch[s]), 
+    #                                                 ['anchor', 'positive', 'negative'])
+    #     d1, d2 = kl_distance(anchor_z_dist, pos_z_dist), kl_distance(anchor_z_dist, neg_z_dist)
+    #     self.log('anchor_pos_distance_kl', d1.mean(), logger=True)
+    #     self.log('anchor_neg_distance_kl', d2.mean(), logger=True)
+    #     self.log('correct_triplet_pct_kl', (d1 < d2).float().mean()*100)
+    #     loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_kl']).mean()
+    #     return loss
+
+    # def shared_step(self, batch, batch_idx):
+    #     bx, triplets_batch = batch
+    #     result = self.model.shared_step(bx)
+    #     # triplet_batch = torch.stack([triplet])
+    #     result['triplet_loss'] = self.triplet_loss(triplets_batch)
+    #     result['triplet_loss_kl'] = self.triplet_loss_kl(triplets_batch)
+    #     result['main_loss'] = result['loss'].detach().clone()
+    #     if self.hparams['triplet_loss_alpha'] > 0:
+    #         result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
+    #     if self.hparams['triplet_loss_alpha_kl'] > 0:
+    #         result['loss'] += self.hparams['triplet_loss_alpha_kl'] * result['triplet_loss_kl']
+    #     return result
     
     def shared_step(self, batch, batch_idx):
-        bx, triplets_batch = batch
+        bx, triplet_dict = batch
         result = self.model.shared_step(bx)
-        result['triplet_loss'] = self.triplet_loss(triplets_batch)
-        result['triplet_loss_kl'] = self.triplet_loss_kl(triplets_batch)
+        # triplet_dists = [self.model.encode(triplet_dict[s]) for s in ['anchor', 'positive', 'negative']]
+        triplet_batch = torch.stack([triplet_dict[s] for s in ['anchor', 'positive', 'negative']])
+        triplet_encs = self.model.encoder(triplet_batch)
+        triplet_dists = self.model.latent_dist(triplet_encs)
+        triplet_dists = split_dist(triplet_dists, n=3)
+        # result['triplet_loss'] = self.triplet_loss(*triplet_dists)
+        # result['triplet_loss_kl'] = self.triplet_loss_kl(*triplet_dists)
+        result.update(self.triplet_loss(*triplet_dists))
+        result.update(self.triplet_loss_kl(*triplet_dists))
         result['main_loss'] = result['loss'].detach().clone()
         if self.hparams['triplet_loss_alpha'] > 0:
             result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
         if self.hparams['triplet_loss_alpha_kl'] > 0:
             result['loss'] += self.hparams['triplet_loss_alpha_kl'] * result['triplet_loss_kl']
-        # import pdb; pdb.set_trace()
         return result
 
     def validation_step(self, batch, batch_idx):
@@ -243,3 +305,10 @@ class TripletVaDE(pl.LightningModule):
         else:
             raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
+
+pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
+
+if __name__=='__main__':
+    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrained_model_file=pretriained_model, lr=1e-3)
+    trainer = pl.Trainer(gpus=1, max_epochs=5,  progress_bar_refresh_rate=10)
+    trainer.fit(model)

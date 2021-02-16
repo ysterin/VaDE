@@ -3,7 +3,7 @@ import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
 from torch import nn
 from torch.nn import functional as F
 from torch import distributions as D
@@ -177,9 +177,10 @@ def get_encoder_decoder(n_neurons, batch_norm=True):
 
 
 class SimpleAutoencoder(pl.LightningModule):
-    def __init__(self, n_neurons=[784, 512, 256, 10], lr=1e-3, batch_norm=False, batch_size=512):
+    def __init__(self, n_neurons, lr=1e-3, batch_norm=False, batch_size=512):
         super(SimpleAutoencoder, self).__init__()
-        self.hparams = {'lr': lr}
+        # self.hparams = {'lr': lr}
+        self.save_hyperparameters()
         self.batch_size = batch_size
         self.k = n_neurons[-1]
         self.encoder, self.decoder = get_encoder_decoder(n_neurons, batch_norm)
@@ -212,13 +213,20 @@ class SimpleAutoencoder(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         return self.shared_step(batch, batch_idx)
 
+    def prepare_data(self):
+        self.train_ds = MNIST("data", download=True)
+        self.valid_ds = MNIST("data", download=True, train=False)
+        to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
+        self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
+        self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
+
     def train_dataloader(self):
-        dataset = MNIST("data", download=True, transform=transform)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, num_workers=8)
+        # dataset = MNIST("data", download=True, transform=transform)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=True, num_workers=12)
 
     def val_dataloader(self):
-        dataset = MNIST("data", download=True, transform=transform, train=False)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=8)
+        # dataset = MNIST("data", download=True, transform=transform, train=False)
+        return DataLoader(self.valid_ds, batch_size=self.batch_size, shuffle=False, num_workers=12)
 
     def encode(self, batch):
         bx, by = batch
@@ -253,7 +261,7 @@ class SimpleAutoencoder(pl.LightningModule):
     def cluster_data(self, dl=None, method='gmm-full', n_init=3, ds_type=None):
         self.eval()
         if not dl:
-            dl = self.val_dataloader()
+            dl = DataLoader(self.all_ds, batch_size=2048, shuffle=False, num_workers=12)
         if method == 'kmeans':
             clustering_algo = KMeans(n_clusters=self.k)
         elif method == 'gmm-full':
