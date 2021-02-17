@@ -12,7 +12,7 @@ __pycache__/
 *.log
 **/logs
 *.ckpt
-*.pkl
+#*.pkl
 .ipynb_checkpoints
 .ipynb_checkpoints/
 .ipynb_checkpoint

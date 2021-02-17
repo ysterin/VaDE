@@ -32,17 +32,19 @@ class PLVaDE(pl.LightningModule):
         # self.pretrained_params_file = pretrained_params_file
         pretrain_model, init_gmm = self.init_params(n_neurons, batch_norm, k, pretrain_epochs)
         self.pretrained_model, self.init_gmm = [pretrain_model], init_gmm
-        self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, 
+        self.model = VaDE(n_neurons=n_neurons, k=k, device=device, 
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log,
                           covariance_type=covariance_type, multivariate_latent=multivariate_latent, rank=rank)
         
     def prepare_data(self):
         if self.hparams['dataset'] == 'mnist':
-            self.train_ds = MNIST("data", download=True)
-            self.valid_ds = MNIST("data", download=True, train=False)
+            train_ds = MNIST("data", download=True)
+            valid_ds = MNIST("data", download=True, train=False)
         elif self.hparams['dataset'] == 'fmnist':
-            self.train_ds = FashionMNIST("data", download=True)
-            self.valid_ds = FashionMNIST("data", download=True, train=False)
+            train_ds = FashionMNIST("data", download=True)
+            valid_ds = FashionMNIST("data", download=True, train=False)
+        else:
+            raise Exception(f"dataset must be either 'mnist' or 'fmnist', instead is {self.hparams['dataset']}")
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [train_ds, valid_ds])
         if self.hparams['data_size'] is not None:
@@ -56,7 +58,7 @@ class PLVaDE(pl.LightningModule):
 
     def init_params(self, n_neurons, batch_norm, k, pretrain_epochs):
         self.prepare_data()
-        pretrain_model = SimpleAutoencoder(n_neurons, batch_norm=batch_norm, lr=self.hparams['pretrain_lr'])
+        pretrain_model = SimpleAutoencoder(n_neurons, lr=self.hparams['pretrain_lr'])
         pretrain_model.val_dataloader = self.val_dataloader
         pretrain_model.train_dataloader = self.train_dataloader
         if self.hparams['pretrained_model_file'] is None:
@@ -123,21 +125,26 @@ class PLVaDE(pl.LightningModule):
 
 def test_gmm():
     model = PLVaDE(n_neurons=[784, 512, 512, 2048, 10], k=10, lr=1e-3, covariance_type='full', batch_size=256, pretrain_epochs=10,
-                pretrained_model_file="AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt", 
+                # pretrained_model_file="AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt", 
+                pretrained_model_file="AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt",
                 init_gmm_file='saved_gmm_init/5wn5ybl3/gmm-full-0.pkl',
-                multivariate_latent=True, rank=5, device='cuda:0')
+                multivariate_latent=True, rank=5, device='cuda:0', dataset='fmnist')
     pretrained_model = model.pretrained_model[0]
     y_true = np.stack([model.all_ds[i][1] for i in range(len(model.all_ds))])
     X_encoded = pretrained_model.encode_ds(model.all_ds)
     for i in range(10):
-        init_gmm = GaussianMixture(10, covariance_type='diag', n_init=3)
+        init_gmm = GaussianMixture(10, covariance_type='full', n_init=3)
         y_pred = init_gmm.fit_predict(X_encoded)
         acc = cluster_acc(y_true, y_pred)
+        nmi = metrics.normalized_mutual_info_score(y_true, y_pred)
+        ari = metrics.adjusted_rand_score(y_true, y_pred)
         print('log likelihood:', init_gmm.score(X_encoded))
         print('Accuracy: ', acc)
-        if acc > 0.9:
+        print('NMI: ', nmi)
+        print('ARI: ', ari)
+        if True:
             import pickle
-            with open(f'saved_gmm_init/5wn5ybl3/gmm-diag-{i}.pkl', 'wb') as file:
+            with open(f'saved_gmm_init/dla63r4s/gmm-full-acc={acc:.2f}.pkl', 'wb') as file:
                 pickle.dump(init_gmm, file)
 
 
@@ -151,14 +158,13 @@ if __name__ == '__main__':
     # train_ds, valid_ds = map(to_tensor_dataset, [train_ds, valid_ds])
     # print(train_ds[3])
     # exit()
-    model = PLVaDE(n_neurons=[784, 512, 512, 2048, 10], k=10, lr=2e-3, covariance_type='diag', batch_size=256, pretrain_epochs=10,
-                   pretrained_model_file="AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt", 
-                #    init_gmm_file='saved_gmm_init/5wn5ybl3/gmm-full-0.pkl',
-                   init_gmm_file='saved_gmm_init/5wn5ybl3/gmm-diag-0.pkl',
-                   multivariate_latent=False, rank=5, device='cuda:0')
+    model = PLVaDE(n_neurons=[784, 512, 512, 2048, 10], k=10, lr=2e-3, covariance_type='full', batch_size=256, pretrain_epochs=10,
+                   pretrained_model_file="AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt", 
+                   init_gmm_file='saved_gmm_init/dla63r4s/gmm-full-acc=0.65.pkl',
+                   multivariate_latent=True, rank=5, device='cuda:0', dataset='fmnist')
 
-    logger = pl.loggers.WandbLogger(project='VADE')
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=50, 
-                        callbacks=[ClusteringEvaluationCallback()], log_every_n_steps=1, profiler='advanced')
+    logger = pl.loggers.WandbLogger(project='VADE', group='Fmnist')
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=100, 
+                        callbacks=[ClusteringEvaluationCallback()], log_every_n_steps=1, profiler='simple')
 
     trainer.fit(model)
