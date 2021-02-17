@@ -100,8 +100,8 @@ class LatentDistribution(nn.Module):
                 self.logvar_fc.bias.data.zero_()
             else:
                 self.logvar_fc = nn.Linear(in_features, out_features)
-                self.logvar_fc.weight.data.zero_()
-                self.logvar_fc.bias.data.zero_()        
+                # self.logvar_fc.weight.data.zero_()
+                # self.logvar_fc.bias.data.zero_()        
     
     def forward(self, x):
         mu = self.mu_fc(x)
@@ -202,13 +202,12 @@ def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu'):
 
 
 class SimpleAutoencoder(pl.LightningModule):
-    def __init__(self, n_neurons, lr=1e-3, batch_norm=False, batch_size=512):
+    def __init__(self, n_neurons, lr=1e-3, batch_size=256, dataset='mnist'):
         super(SimpleAutoencoder, self).__init__()
-        # self.hparams = {'lr': lr}
         self.save_hyperparameters()
         self.batch_size = batch_size
         self.k = n_neurons[-1]
-        self.encoder, self.decoder = get_encoder_decoder(n_neurons, batch_norm)
+        self.encoder, self.decoder = get_encoder_decoder(n_neurons, batch_norm=False)
 
     def forward(self, x):
         return self.decoder(self.encoder(x))
@@ -236,8 +235,12 @@ class SimpleAutoencoder(pl.LightningModule):
         return self.shared_step(batch, batch_idx)
 
     def prepare_data(self):
-        self.train_ds = MNIST("data", download=True)
-        self.valid_ds = MNIST("data", download=True, train=False)
+        if self.hparams['dataset'] == 'mnist':
+            self.train_ds = MNIST("data", download=True)
+            self.valid_ds = MNIST("data", download=True, train=False)
+        elif self.hparams['dataset'] == 'fmnist':
+            self.train_ds = FashionMNIST("data", download=True)
+            self.valid_ds = FashionMNIST("data", download=True, train=False)
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
@@ -395,14 +398,14 @@ class VaDE(nn.Module):
     # @property
     def _component_distribution(self):
         if self.covariance_type == 'diag':
-            return D.Independent(D.Normal(self.mu_c.cuda(), self.sigma_c.cuda()), 1)
+            return D.Independent(D.Normal(self.mu_c, self.sigma_c), 1)
         elif self.covariance_type == 'full':
             return D.MultivariateNormal(self.mu_c, scale_tril=self.scale_tril_c)
 
-    # @property 
+    # @property p
     def _comp_dists(self):
         if self.covariance_type == 'diag':
-            return [D.Independent(D.Normal(self.mu_c.cuda()[i], self.sigma_c.cuda()[i]), 1) for i in range(self.k)]
+            return [D.Independent(D.Normal(self.mu_c[i], self.sigma_c[i]), 1) for i in range(self.k)]
         elif self.covariance_type == 'full':
             return  [D.MultivariateNormal(self.mu_c[i], scale_tril=self.scale_tril_c[i]) for i in range(self.k)]
     

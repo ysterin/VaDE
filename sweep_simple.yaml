@@ -12,8 +12,10 @@ parameters:
     min: -10
     max: -4
   epochs:
-    values: [20, 40, 60]
+    values: [20, 40, 50]
   batch_size: 
     value: 256
   clustering_method: 
-    values: [gmm-diag]
+    values: [gmm-full]
+  dataset:
+    value: fmnist

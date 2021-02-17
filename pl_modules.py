@@ -25,7 +25,7 @@ from scipy.optimize import linear_sum_assignment as linear_assignment
 class PLVaDE(pl.LightningModule):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, pretrain_lr=2e-3,
                  device='cuda', pretrain_epochs=50, batch_size=1024, pretrained_model_file=None, init_gmm_file=None,
-                 covariance_type='diag', data_size=None, multivariate_latent=False, rank=3):
+                 covariance_type='diag', data_size=None, multivariate_latent=False, rank=3, dataset='mnist'):
         super(PLVaDE, self).__init__()
         self.save_hyperparameters()
         self.bs = batch_size
@@ -37,8 +37,12 @@ class PLVaDE(pl.LightningModule):
                           covariance_type=covariance_type, multivariate_latent=multivariate_latent, rank=rank)
         
     def prepare_data(self):
-        train_ds = MNIST("data", download=True)
-        valid_ds = MNIST("data", download=True, train=False)
+        if self.hparams['dataset'] == 'mnist':
+            self.train_ds = MNIST("data", download=True)
+            self.valid_ds = MNIST("data", download=True, train=False)
+        elif self.hparams['dataset'] == 'fmnist':
+            self.train_ds = FashionMNIST("data", download=True)
+            self.valid_ds = FashionMNIST("data", download=True, train=False)
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [train_ds, valid_ds])
         if self.hparams['data_size'] is not None:
@@ -154,7 +158,7 @@ if __name__ == '__main__':
                    multivariate_latent=False, rank=5, device='cuda:0')
 
     logger = pl.loggers.WandbLogger(project='VADE')
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=100, 
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=50, 
                         callbacks=[ClusteringEvaluationCallback()], log_every_n_steps=1, profiler='advanced')
 
     trainer.fit(model)

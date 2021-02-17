@@ -2,6 +2,7 @@ import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 import torch
+import pickle
 from torch.utils.data import DataLoader, Dataset, IterableDataset, TensorDataset
 from torch import nn, distributions
 from torch.nn import functional as F
@@ -111,6 +112,7 @@ class TripletVaDE(pl.LightningModule):
     def __init__(self, n_neurons=[784, 512, 256, 10],
                  batch_norm=False,
                  k=10, 
+                 dataset='mnist',
                  lr=1e-3, 
                  lr_pretrain=3e-4,
                  lr_gmm = None,
@@ -118,6 +120,7 @@ class TripletVaDE(pl.LightningModule):
                  device='cuda', 
                  pretrain_epochs=50, 
                  pretrained_model_file=None, 
+                 init_gmm_file=None,
                  covariance_type='diag',
                  data_size=None,
                  triplet_loss_margin=0.5,
@@ -131,22 +134,20 @@ class TripletVaDE(pl.LightningModule):
         if lr_gmm is None:
             self.hparams['lr_gmm'] = lr
         self.batch_size = batch_size
-        # self.hparams = {'lr': lr, 'lr_gmm': lr_gmm, 'triplet_loss_margin': triplet_loss_margin, 'triplet_loss_alpha': triplet_loss_alpha}
-        # self.hparams['triplet_loss_margin_kl'] = 25
-        # self.hparams['batch_size'] = batch_size
-        # self.hparams['triplet_loss_alpha_kl'] = triplet_loss_alpha_kl
-        # self.hparams['warmup_epochs'] = warmup_epochs
-        # self.hparams['n_samples_for_triplets'] = n_samples_for_triplets
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
-        pretrain_model, init_gmm = self.init_params(k, pretrained_model_file)
-        self.model = VaDE(n_neurons=n_neurons, batch_norm=batch_norm, k=k, device=device, covariance_type=covariance_type,
+        pretrain_model, init_gmm = self.init_params()
+        self.model = VaDE(n_neurons=n_neurons, k=k, device=device, covariance_type=covariance_type,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
         lr_gmm = ifnone(lr_gmm, lr)
 
     def prepare_data(self):
         # transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
-        self.train_ds = MNIST("data", download=True)
-        self.valid_ds = MNIST("data", download=True, train=False)
+        if self.hparams['dataset'] == 'mnist':
+            self.train_ds = MNIST("data", download=True)
+            self.valid_ds = MNIST("data", download=True, train=False)
+        elif self.hparams['dataset'] == 'fmnist':
+            self.train_ds = FashionMNIST("data", download=True)
+            self.valid_ds = FashionMNIST("data", download=True, train=False)
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
         if self.hparams['data_size'] is not None:
@@ -164,8 +165,7 @@ class TripletVaDE(pl.LightningModule):
     def pretrain_model(self):
         n_neurons, pretrain_epochs, batch_norm = self.n_neurons, self.pretrain_epochs, self.batch_norm
         self.prepare_data()
-        # pretrained_model = SimpleAutoencoder(n_neurons, batch_norm=batch_norm, lr=3e-4)
-        pretrained_model = SimpleAutoencoder(n_neurons, batch_norm=batch_norm, lr=self.hparams['lr_pretrain'])
+        pretrained_model = SimpleAutoencoder(n_neurons, lr=self.hparams['lr_pretrain'])
         pretrained_model.val_dataloader = lambda: DataLoader(self.valid_ds, batch_size=256, shuffle=False, num_workers=8)
         pretrained_model.train_dataloader = lambda: DataLoader(self.train_ds, batch_size=256, shuffle=True, num_workers=8)
         gpus = 1 if torch.cuda.is_available() else 0
@@ -173,20 +173,23 @@ class TripletVaDE(pl.LightningModule):
         trainer.fit(pretrained_model)
         return pretrained_model
     
-    def init_params(self, k, pretrained_model_file=None):
-        if not pretrained_model_file:
+    def init_params(self):
+        if not self.hparams['pretrained_model_file']:
             pretrained_model = self.pretrain_model()
         else:
-            pretrained_model = SimpleAutoencoder(self.n_neurons, batch_norm=self.batch_norm)
+            pretrained_model = SimpleAutoencoder(self.n_neurons)
             state_dict = torch.load(pretrained_model_file)
             if 'state_dict' in state_dict:
                 state_dict = state_dict['state_dict']
             pretrained_model.load_state_dict(state_dict)
             self.prepare_data()
-        # transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.flatten(x).float()/255.)])
-        X_encoded = pretrained_model.encode_ds(self.all_ds)
-        init_gmm = GaussianMixture(k, covariance_type=self.hparams['covariance_type'], n_init=3)
-        init_gmm.fit(X_encoded)
+        if not self.hparams['init_gmm_file']:
+            X_encoded = pretrained_model.encode_ds(self.all_ds)
+            init_gmm = GaussianMixture(self.hparams['k'], covariance_type=self.hparams['covariance_type'], n_init=3)
+            init_gmm.fit(X_encoded)
+        else:
+            with open(self.hparams['init_gmm_file'], 'rb') as file:
+                init_gmm = pickle.load(file)
         return pretrained_model, init_gmm
         
     def train_dataloader(self):
@@ -273,9 +276,10 @@ class TripletVaDE(pl.LightningModule):
             raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
 
-pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
-
+pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
+init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-0.pkl"
 if __name__=='__main__':
-    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 8], pretrain_epochs=20, lr=1e-3)
+    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=1e-3,
+     pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
     trainer = pl.Trainer(gpus=1, max_epochs=5,  progress_bar_refresh_rate=10)
     trainer.fit(model)
