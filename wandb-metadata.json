@@ -1,0 +1,31 @@
+{
+    "os": "Linux-4.15.0-134-generic-x86_64-with-glibc2.27",
+    "python": "3.8.7",
+    "heartbeatAt": "2021-02-17T17:10:52.355227",
+    "startedAt": "2021-02-17T17:10:51.377193",
+    "docker": null,
+    "gpu": "GeForce RTX 3090",
+    "gpu_count": 1,
+    "cpu_count": 16,
+    "cuda": "10.1.243",
+    "args": [
+        "--batch_size=256",
+        "--clustering_method=gmm-full",
+        "--dataset=fmnist",
+        "--epochs=50",
+        "--hid_dim=10",
+        "--lr=0.0016751916797300658"
+    ],
+    "state": "running",
+    "codePath": "train_simple.py",
+    "program": "train_simple.py",
+    "git": {
+        "remote": "https://github.com/ysterin/VaDE.git",
+        "commit": "b93ed9a8fcbf362a809cfa9224c97870dfe224ad"
+    },
+    "email": null,
+    "root": "/home/shuki/projects/VaDE",
+    "host": "metis0",
+    "username": "shuki",
+    "executable": "/home/shuki/projects/VaDE/vade/bin/python"
+}
