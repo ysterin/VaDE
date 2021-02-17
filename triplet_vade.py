@@ -276,8 +276,8 @@ class TripletVaDE(pl.LightningModule):
             raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
 
-pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
-init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-0.pkl"
+pretrained_model_file = None # "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
+init_gmm_file = None # "saved_gmm_init/5wn5ybl3/gmm-full-0.pkl"
 if __name__=='__main__':
     model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=1e-3,
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
