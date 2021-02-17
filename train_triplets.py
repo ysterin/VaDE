@@ -10,7 +10,7 @@ from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, c
 
 pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
-defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048,
+defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'lr': 2e-3, 
             'lr_gmm': 2e-3, 
             'batch_size': 256, 
@@ -32,7 +32,7 @@ wandb.init(config=defaults, project='VaDE Triplets')
 config = wandb.config
 
 def main():
-    triplets_model = TripletVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, 10], 
+    triplets_model = TripletVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
                                  batch_norm=config.batch_norm,
                                  lr=config.lr,
                                  lr_gmm=config.lr_gmm,

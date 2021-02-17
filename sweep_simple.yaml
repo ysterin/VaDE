@@ -1,0 +1,19 @@
+program: train_simple.py
+project: "AE clustering"
+method: random
+metric:
+  name: ACC
+  goal: maximize
+parameters:
+  hid_dim:
+    value: 10
+  lr:
+    distribution: log_uniform
+    min: -10
+    max: -4
+  epochs:
+    values: [20, 40, 60]
+  batch_size: 
+    value: 256
+  clustering_method: 
+    values: [gmm-diag]
