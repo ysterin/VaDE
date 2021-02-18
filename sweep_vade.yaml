@@ -1,0 +1,24 @@
+program: train_vade.py
+project: "VADE"
+method: random
+metric:
+  name: ACC
+  goal: maximize
+parameters:
+  dataset:
+    value: fmnist
+  pretrained_model_file:
+    value: "wandb/run-20210217_191051-dla63r4s/files/AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt"
+  init_gmm_file:
+    value: saved_gmm_init/dla63r4s/gmm-full-acc=0.65.pkl
+  rank:
+    values: [1, 3, 5, 7]
+  lr:
+    min: 0.001
+    max: 0.003
+  epochs:
+    value: 100
+  batch_size: 
+    value: 256
+  covariance_type: 
+    values: [full]

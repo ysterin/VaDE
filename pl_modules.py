@@ -159,12 +159,12 @@ if __name__ == '__main__':
     # print(train_ds[3])
     # exit()
     model = PLVaDE(n_neurons=[784, 512, 512, 2048, 10], k=10, lr=2e-3, covariance_type='full', batch_size=256, pretrain_epochs=10,
-                   pretrained_model_file="AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt", 
+                   pretrained_model_file="wandb/run-20210217_191051-dla63r4s/files/AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt", 
                    init_gmm_file='saved_gmm_init/dla63r4s/gmm-full-acc=0.65.pkl',
                    multivariate_latent=True, rank=5, device='cuda:0', dataset='fmnist')
 
     logger = pl.loggers.WandbLogger(project='VADE', group='Fmnist')
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=100, 
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=10, 
                         callbacks=[ClusteringEvaluationCallback()], log_every_n_steps=1, profiler='simple')
 
     trainer.fit(model)
