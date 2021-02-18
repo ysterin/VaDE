@@ -84,17 +84,17 @@ class PLVaDE(pl.LightningModule):
         
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=1)
+        return DataLoader(self.train_ds, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=8)
                         #   num_workers=4, pin_memory=True, persistent_workers=False, prefetch_factor=8)
 
     def val_dataloader(self):
-        return DataLoader(self.valid_ds, batch_size=self.hparams['batch_size'], shuffle=False, num_workers=1) 
+        return DataLoader(self.valid_ds, batch_size=self.hparams['batch_size']*4, shuffle=False, num_workers=8) 
                         #   num_workers=4, pin_memory=True, persistent_workers=False, prefetch_factor=8)
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), self.hparams['lr'], weight_decay=0.00)
         # opt = torch.optim.AdamW(list(self.parameters())[3:], self.hparams['lr'], weight_decay=0.00)
-        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch:  (epoch+1)/10 if epoch < 0 else 0.9**(epoch//10))
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch:  (epoch+1)/10 if epoch < 10 else 0.9**(epoch//10))
         return [opt], [sched]
     
     def training_step(self, batch, batch_idx):
