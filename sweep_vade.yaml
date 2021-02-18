@@ -6,13 +6,15 @@ metric:
   goal: maximize
 parameters:
   dataset:
-    value: fmnist
+    value: mnist
   pretrained_model_file:
-    value: "wandb/run-20210217_191051-dla63r4s/files/AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt"
+    value: "AE clustering/n3jkdalz/checkpoints/epoch=299-step=5999.ckpt"
   init_gmm_file:
-    value: saved_gmm_init/dla63r4s/gmm-full-acc=0.65.pkl
+    value: "saved_gmm_init/n3jkdalz/gmm-full-acc=0.78.pkl"
+  multivariate_latent:
+    value: False
   rank:
-    values: [1, 3, 5, 7]
+    value: 1
   lr:
     min: 0.001
     max: 0.003

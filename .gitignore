@@ -13,6 +13,7 @@ __pycache__/
 **/logs
 *.ckpt
 #*.pkl
+sweep*.yaml
 .ipynb_checkpoints
 .ipynb_checkpoints/
 .ipynb_checkpoint

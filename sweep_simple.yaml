@@ -9,13 +9,17 @@ parameters:
     value: 10
   lr:
     distribution: log_uniform
-    min: -10
-    max: -4
+    min: -9
+    max: -5
   epochs:
-    values: [20, 40, 50]
+    values: [100, 200, 300]
   batch_size: 
     value: 256
   clustering_method: 
     values: [gmm-full]
   dataset:
-    value: fmnist
+    value: mnist
+  data_size:
+    value: 5000
+  data_random_state:
+    value: 42

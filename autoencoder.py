@@ -100,8 +100,8 @@ class LatentDistribution(nn.Module):
                 self.logvar_fc.bias.data.zero_()
             else:
                 self.logvar_fc = nn.Linear(in_features, out_features)
-                # self.logvar_fc.weight.data.zero_()
-                # self.logvar_fc.bias.data.zero_()        
+                self.logvar_fc.weight.data.zero_()
+                self.logvar_fc.bias.data.zero_()        
     
     def forward(self, x):
         mu = self.mu_fc(x)
@@ -202,7 +202,7 @@ def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu'):
 
 
 class SimpleAutoencoder(pl.LightningModule):
-    def __init__(self, n_neurons, lr=1e-3, batch_size=256, dataset='mnist'):
+    def __init__(self, n_neurons, lr=1e-3, batch_size=256, dataset='mnist', data_size=None, data_random_state=42):
         super(SimpleAutoencoder, self).__init__()
         self.save_hyperparameters()
         self.batch_size = batch_size
@@ -222,17 +222,21 @@ class SimpleAutoencoder(pl.LightningModule):
         bx, by = batch
         z = self.encoder(bx)
         out = self.decoder(z)
-        # mse_loss = F.mse_loss(out, bx)
+        mse_loss = F.mse_loss(out, bx)
         bce_loss = F.binary_cross_entropy(out, bx, reduction='mean')
-        # self.log('mse_loss', mse_loss)
-        self.log('bce_loss', bce_loss)
+        self.log('mse_loss', mse_loss)
+        # self.log('bce_loss', bce_loss)
         return bce_loss
     
     def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, batch_idx)
+        loss = self.shared_step(batch, batch_idx)
+        self.log('train/loss', loss, on_step=True)
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, batch_idx)
+        loss = self.shared_step(batch, batch_idx)
+        self.log('valid/loss', loss, on_epoch=True)
+        return loss
 
     def prepare_data(self):
         if self.hparams['dataset'] == 'mnist':
@@ -243,14 +247,19 @@ class SimpleAutoencoder(pl.LightningModule):
             self.valid_ds = FashionMNIST("data", download=True, train=False)
         to_tensor_dataset = lambda ds: TensorDataset(ds.data.view(-1, 28**2).float()/255., ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
+        if self.hparams['data_size'] is not None:
+            n_sample = self.hparams['data_size']
+            to_subset = lambda ds: torch.utils.data.random_split(ds, 
+                                            [n_sample, len(ds) - n_sample],
+                                            torch.Generator().manual_seed(self.hparams['data_random_state']))[0]
+            # self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
+            self.train_ds = to_subset(self.train_ds)
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
 
     def train_dataloader(self):
-        # dataset = MNIST("data", download=True, transform=transform)
         return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=True, num_workers=12)
 
     def val_dataloader(self):
-        # dataset = MNIST("data", download=True, transform=transform, train=False)
         return DataLoader(self.valid_ds, batch_size=self.batch_size, shuffle=False, num_workers=12)
 
     def encode(self, batch):
@@ -314,7 +323,6 @@ class VaDE(nn.Module):
         self.latent_dim = n_neurons[-1]
         self.mixture_logits = nn.Parameter(torch.zeros(k, device=device))
         self.mu_c = nn.Parameter(torch.zeros(k, self.latent_dim, device=device))
-        # import pdb; pdb.set_trace()
         if self.covariance_type == 'diag':
             self.sigma_c = nn.Parameter(torch.ones(k, self.latent_dim, device=device))
             self.gmm_params = [self.mixture_logits, self.mu_c, self.sigma_c]
@@ -323,52 +331,29 @@ class VaDE(nn.Module):
             self.gmm_params = [self.mixture_logits, self.mu_c, self.scale_tril_c]
         else:
             raise Exception(f"illigal covariance_type {covariance_type}, can only be 'full' or 'diag'")
-        # n_layers = len(n_neurons) - 1
-        # layers = list()
-        # for i in range(n_layers-1):
-        #     layer = nn.Sequential(nn.Linear(n_neurons[i], n_neurons[i+1]),
-        #                           nn.ReLU(),
-        #                           nn.BatchNorm1d(n_neurons[i+1]) if batch_norm else nn.Identity())
-        #     layer.register_forward_hook(self.register_stats(f"encoder_{i}"))
-        #     layers.append(layer)
-        # self.encoder = nn.Sequential(*layers)
         encoder, decoder = get_encoder_decoder(n_neurons, activation='relu')
         self.encoder = encoder[:-1]
-        # self.latent_dist = LatentDistribution(n_neurons[-2], n_neurons[-1])
         if self.multivariate_latent:
             self.latent_dist = LatentLowRankMultivariave(n_neurons[-2], n_neurons[-1], rank=rank)
         else:
             self.latent_dist = LatentDistribution(n_neurons[-2], n_neurons[-1])
         self.latent_dist.mu_fc.register_forward_hook(self.register_stats(f"latent mu"))
-        # self.latent_dist.logvar_fc.register_forward_hook(self.register_stats(f"latent logvar"))
-        # layers = list()
-        # n_neurons = n_neurons[::-1]
-        # for i in range(n_layers-1):
-        #     layers.append(nn.Sequential(nn.Linear(n_neurons[i], n_neurons[i+1]),
-        #                                 nn.ReLU(),
-        #                                 nn.BatchNorm1d(n_neurons[i+1]) if batch_norm else nn.Identity()))
-        # self.decoder = nn.Sequential(*layers)
         self.decoder = decoder[:-1]
         self.out_dist = BernoulliDistribution(n_neurons[1], n_neurons[0])
         self.model_params = list(self.encoder.parameters()) + list(self.latent_dist.parameters()) + list(self.decoder.parameters()) + list(self.out_dist.parameters())
         if pretrain_model is not None and init_gmm is not None:
             self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_))
             self.mu_c.data = torch.Tensor(init_gmm.means_).to(device)
-            # self.mu_c.to(device)
-            # self.sigma_c.data = torch.Tensor(init_gmm.covariances_.T).sqrt()
             if self.covariance_type == 'diag':
                 self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt().to(device)
-                # self.sigma_c.to(device)
             elif self.covariance_type == 'full':
                 self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1))).to(device)
-                # self.scale_tril_c.to(device)
             self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
             self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
             self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
             self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
         self.component_distribution = self._component_distribution()
         self.comp_dists = self._comp_dists()
-        # import pdb; pdb.set_trace()
 
     def log(self, metric, value, **kwargs):
         if self.training:

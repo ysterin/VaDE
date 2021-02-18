@@ -14,14 +14,16 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'device': 'cuda',
             'clustering_method': 'gmm-diag',
             'epochs':5,
-            'dataset': 'fmnist'}
+            'dataset': 'fmnist',
+            'data_size': 5000,
+            'data_random_state': 42}
 
 wandb.init(config=defaults, project='AE clustering')
 config = wandb.config
 
 def main():
     model = SimpleAutoencoder(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
-                              dataset=config.dataset,
+                              dataset=config.dataset, data_size=config.data_size, data_random_state=config.data_random_state,
                               lr=config.lr, batch_size=config.batch_size)
     logger = pl.loggers.WandbLogger()
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
