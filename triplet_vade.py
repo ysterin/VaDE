@@ -83,11 +83,13 @@ class TripletDataset(IterableDataset):
 
 
 class CombinedDataset(Dataset):
-    def __init__(self, dataset, transform=None, data_size=None, max_samples=None, seed=None):
+    def __init__(self, dataset, transform=None, data_size=None, max_triplets=None, seed=42):
         super(CombinedDataset, self).__init__()
         self.data = torch.stack([dataset[i][0] for i in range(len(dataset))], dim=0)
         targets = torch.stack([dataset[i][1] for i in range(len(dataset))], dim=0)
-        self.triplet_dataset = TripletDataset(self.data, targets, transform, data_size, max_samples=len(dataset), seed=seed)
+        if not max_triplets:
+            max_triplets = len(dataset)
+        self.triplet_dataset = TripletDataset(self.data, targets, transform, data_size, max_samples=max_triplets, seed=seed)
         self.triplets_iterator = iter(self.triplet_dataset)
     
     def __len__(self):
@@ -99,7 +101,11 @@ class CombinedDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.data[idx]
-        triplet = next(self.triplets_iterator)
+        try:
+            triplet = next(self.triplets_iterator)
+        except StopIteration:
+            self.triplets_iterator = iter(self.triplet_dataset)
+            triplet = next(self.triplets_iterator)
         return (sample, triplet)
 
 
@@ -128,7 +134,8 @@ class TripletVaDE(pl.LightningModule):
                  triplet_loss_margin_kl=20, 
                  triplet_loss_alpha_kl=0.,
                  warmup_epochs=10,
-                 n_samples_for_triplets=1000):
+                 n_samples_for_triplets=1000,
+                 n_triplets=None):
         super(TripletVaDE, self).__init__()
         self.save_hyperparameters()
         if lr_gmm is None:
@@ -157,9 +164,11 @@ class TripletVaDE(pl.LightningModule):
                                                                  torch.Generator().manual_seed(42))[0]
             self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
-        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'])
+        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'], 
+                                                max_triplets=self.hparams['n_triplets'])
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256))
-        self.valid_triplet_ds = CombinedDataset(self.valid_ds, data_size=self.hparams['n_samples_for_triplets']) 
+        self.valid_triplet_ds = CombinedDataset(self.valid_ds, data_size=self.hparams['n_samples_for_triplets'],
+                                                max_triplets=self.hparams['n_triplets'])
                                                 # transform=transforms.Lambda(lambda x: torch.flatten(x)/256), seed=42)
             
     def pretrain_model(self):
@@ -178,7 +187,7 @@ class TripletVaDE(pl.LightningModule):
             pretrained_model = self.pretrain_model()
         else:
             pretrained_model = SimpleAutoencoder(self.n_neurons)
-            state_dict = torch.load(pretrained_model_file)
+            state_dict = torch.load(self.hparams['pretrained_model_file'])
             if 'state_dict' in state_dict:
                 state_dict = state_dict['state_dict']
             pretrained_model.load_state_dict(state_dict)
@@ -265,15 +274,16 @@ class TripletVaDE(pl.LightningModule):
             self.log('train/' + k, v, logger=True)
         return result
 
-    def cluster_data(self, ds_type='all'):
-        if ds_type=='all':
-            dl = DataLoader(self.all_ds, batch_size=1024, shuffle=False, num_workers=8)
-        elif ds_type=='train':
-            dl = DataLoader(self.train_ds, batch_size=1024, shuffle=False, num_workers=8)
-        elif ds_type=='valid':
-            dl = DataLoader(self.valid_ds, batch_size=1024, shuffle=False, num_workers=8)
-        else:
-            raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
+    def cluster_data(self, dl=None, ds_type='all'):
+        if not dl:
+            if ds_type=='all':
+                dl = DataLoader(self.all_ds, batch_size=1024, shuffle=False, num_workers=8)
+            elif ds_type=='train':
+                dl = DataLoader(self.train_ds, batch_size=1024, shuffle=False, num_workers=8)
+            elif ds_type=='valid':
+                dl = DataLoader(self.valid_ds, batch_size=1024, shuffle=False, num_workers=8)
+            else:
+                raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
 
 pretrained_model_file = None # "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"

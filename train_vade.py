@@ -1,8 +1,10 @@
-
+SEED = 42
 import torch
+torch.manual_seed(SEED)
 import pytorch_lightning as pl
 import importlib
 import numpy as np
+np.random.seed(SEED)
 import wandb
 # from triplet_vade import TripletVaDE
 #from triplet_vade import TripletVaDE
@@ -11,8 +13,9 @@ from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, c
 
 pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
-defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
+defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'lr': 2e-3, 
+            'pretrain_lr': 3e-4,
             'batch_size': 256, 
             'batch_norm': False,
             'device': 'cuda',
@@ -20,7 +23,7 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'data_size': None, 
             'dataset': 'mnist',
             'init_gmm_file': None,
-            'pretrained_model_file': pretriained_model, 
+            'pretrained_model_file': None, 
             'multivariate_latent': True,
             'rank': 5,
             'covariance_type': 'full', 
@@ -44,7 +47,7 @@ def main():
                                  rank=config.rank)
 
     logger = pl.loggers.WandbLogger()
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=5,
                          callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
 
     trainer.fit(model)

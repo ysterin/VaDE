@@ -101,25 +101,26 @@ class PLVaDE(pl.LightningModule):
         bx, by = batch
         result = self.model.shared_step(bx)
         for k, v in result.items():
-            self.log(k, v, logger=True)
+            self.log('train/' + k, v, logger=True)
         return result
 
     def validation_step(self, batch, batch_idx):
         bx, by = batch
         result = self.model.shared_step(bx)
         for k, v in result.items():
-            self.log(k, v, logger=True)
+            self.log('valid/' + k, v, logger=True)
         return result
 
-    def cluster_data(self, ds_type='all'):
-        if ds_type=='all':
-            dl = DataLoader(self.all_ds, batch_size=4096, shuffle=False, num_workers=1)
-        elif ds_type=='train':
-            dl = DataLoader(self.train_ds, batch_size=4096, shuffle=False, num_workers=1, pin_memory=True)
-        elif ds_type=='valid':
-            dl = DataLoader(self.valid_ds, batch_size=4096, shuffle=False, num_workers=1, pin_memory=True)
-        else:
-            raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
+    def cluster_data(self, dl=None, ds_type='all'):
+        if not dl:   
+            if ds_type=='all':
+                dl = DataLoader(self.all_ds, batch_size=4096, shuffle=False, num_workers=1)
+            elif ds_type=='train':
+                dl = DataLoader(self.train_ds, batch_size=4096, shuffle=False, num_workers=1, pin_memory=True)
+            elif ds_type=='valid':
+                dl = DataLoader(self.valid_ds, batch_size=4096, shuffle=False, num_workers=1, pin_memory=True)
+            else:
+                raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
 
 
