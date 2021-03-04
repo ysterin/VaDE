@@ -44,8 +44,9 @@ def main():
                                  rank=config.rank)
 
     logger = pl.loggers.WandbLogger()
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
-                         callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=10, 
+                         callbacks=[ClusteringEvaluationCallback(), ClusteringEvaluationCallback(ds_type='valid')], 
+                         max_epochs=config.epochs)
 
     trainer.fit(model)
 

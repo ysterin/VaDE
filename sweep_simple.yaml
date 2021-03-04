@@ -9,10 +9,10 @@ parameters:
     value: 10
   lr:
     distribution: log_uniform
-    min: -9
-    max: -5
+    min: -10
+    max: -6
   epochs:
-    values: [100, 200, 300]
+    values: [50, 70, 100]
   batch_size: 
     value: 256
   clustering_method: 
@@ -20,6 +20,6 @@ parameters:
   dataset:
     value: mnist
   data_size:
-    value: 5000
+    value: 20000
   data_random_state:
     value: 42

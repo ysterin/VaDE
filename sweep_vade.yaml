@@ -8,18 +8,23 @@ parameters:
   dataset:
     value: mnist
   pretrained_model_file:
-    value: "AE clustering/n3jkdalz/checkpoints/epoch=299-step=5999.ckpt"
+    value: "AE clustering/2j41m899/checkpoints/epoch=99-step=7899.ckpt"
   init_gmm_file:
-    value: "saved_gmm_init/n3jkdalz/gmm-full-acc=0.78.pkl"
+    value: "saved_gmm_init/2j41m899/gmm-full-acc=0.91.pkl"
   multivariate_latent:
     value: False
   rank:
     value: 1
   lr:
-    min: 0.001
-    max: 0.003
+  value: 0.002
+    # min: 0.001
+    # max: 0.003
   epochs:
-    value: 100
+    value: 300
+  data_size:
+    value: 20000
+  data_random_state:
+    value: 42
   batch_size: 
     value: 256
   covariance_type: 
