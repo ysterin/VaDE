@@ -1,6 +1,6 @@
 program: train_vade.py
 project: "VADE"
-method: random
+method: uniform
 metric:
   name: ACC
   goal: maximize
@@ -25,3 +25,5 @@ parameters:
     value: 64
   covariance_type: 
     values: [diag]
+  seed:
+    values: [42, 666, 117]
