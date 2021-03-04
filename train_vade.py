@@ -1,4 +1,3 @@
-
 import torch
 import pytorch_lightning as pl
 import importlib
@@ -9,10 +8,11 @@ import wandb
 from pl_modules import PLVaDE
 from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
 
-pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
+#pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
-defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
+defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'lr': 2e-3, 
+            'pretrain_lr': 3e-4,
             'batch_size': 256, 
             'batch_norm': False,
             'device': 'cuda',
@@ -20,15 +20,18 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'data_size': None, 
             'dataset': 'mnist',
             'init_gmm_file': None,
-            'pretrained_model_file': pretriained_model, 
+            'pretrained_model_file': None, 
             'multivariate_latent': True,
             'rank': 5,
             'covariance_type': 'full', 
-            'epochs':50}
+            'epochs':50,
+            'seed': 42}
 
 wandb.init(config=defaults, project='VADE')
 config = wandb.config
-
+SEED = config.seed
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 def main():
     model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
                                  lr=config.lr,

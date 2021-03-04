@@ -51,7 +51,19 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
             self.kwargs['ds_type'] = 'all'
 
     def evaluate_clustering(self, trainer, pl_module):
-        gt, labels, _ = pl_module.cluster_data(**self.kwargs)
+        if trainer.datamodule is not None:
+            if self.kwargs['ds_type'] == 'train':
+                ds = trainer.datamodule.train_ds
+            elif self.kwargs['ds_type'] == 'valid':
+                ds = trainer.datamodule.valid_ds
+            elif self.kwargs['ds_type'] == 'all':
+                ds = trainer.datamodule.all_ds 
+            else:
+                raise Exception(f"ds_type can be only 'train', 'valid', 'all'")
+            dl = DataLoader(ds, batch_size=1024, shuffle=False)
+            gt, labels, _ = pl_module.cluster_data(dl=dl, **self.kwargs)
+        else:
+            gt, labels, _ = pl_module.cluster_data(**self.kwargs)
         nmi, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(gt, labels)
         acc = cluster_acc(labels, gt)
         ari = metrics.adjusted_rand_score(labels, gt)

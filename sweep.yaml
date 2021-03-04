@@ -7,7 +7,7 @@ metric:
 parameters:
   pretrained_model_file:
     # value: pretrained_models/prime-night-30/autoencoder-epoch=29.ckpt
-    value: "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
+    value: "wandb/run-20210223_135845-zcinx93k/files/AE clustering/zcinx93k/checkpoints/epoch=299-step=5999.ckpt"
   lr:
     min: 0.001
     max: 0.003
@@ -20,17 +20,21 @@ parameters:
   # triplet_loss_margin_kl:
   #   min: 0
   #   max: 50
-  triplet_loss_alpha_kl:
-    value: 0.0
+  # triplet_loss_alpha_kl:
+  #   value: 30
   triplet_loss_alpha: 
-    value: 0.0
-    # distribution: log_uniform
-    # min: 2
-    # max: 6
+    # value: 0.0
+    distribution: log_uniform
+    min: 3
+    max: 6
   triplet_loss_margin: 
     min: 0.1
     max: 1.
+  data_size:
+    value: 10000
+  n_samples_for_triplets: 
+    value: 1000
   batch_size: 
-    value: 256
+    value: 64
   covariance_type: 
-    values: [full]
+    values: [full]s
