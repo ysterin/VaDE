@@ -22,6 +22,17 @@ from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
 
+def best_of_n_gmm(x, n_clusters=10, n=10, covariance_type='full', n_init=1):
+    scores_dict = {}
+    for i in range(n):
+        gmm = GaussianMixture(n_clusters)
+        gmm.fit(x)
+        log_likelihood = gmm.score(x)
+        scores_dict[gmm] = log_likelihood
+    best_gmm, best_score = max(scores_dict.items(), key=lambda o: o[1])
+    return best_gmm
+
+
 class PLVaDE(pl.LightningModule):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, pretrain_lr=2e-3,
                  device='cuda', pretrain_epochs=50, batch_size=1024, pretrained_model_file=None, init_gmm_file=None,
@@ -76,8 +87,9 @@ class PLVaDE(pl.LightningModule):
         if self.hparams['init_gmm_file'] is None:
             X_encoded = pretrain_model.encode_ds(self.all_ds)
             # X_encoded = pretrain_model.encode_ds(dataset)
-            init_gmm = GaussianMixture(k, covariance_type=self.hparams['covariance_type'], n_init=3)
-            init_gmm.fit(X_encoded)
+            # init_gmm = GaussianMixture(k, covariance_type=self.hparams['covariance_type'], n_init=3)
+            # init_gmm.fit(X_encoded)
+            init_gmm = best_of_n_gmm(X_encoded, k, covariance_type=self.hparams['covariance_type'], n=10)
         else:
             with open(self.hparams['init_gmm_file'], 'rb') as file:
                 init_gmm = pickle.load(file)

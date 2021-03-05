@@ -16,7 +16,7 @@ defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'batch_size': 256, 
             'batch_norm': False,
             'device': 'cuda',
-            'pretrain_epochs': 100, 
+            'pretrain_epochs': 50, 
             'data_size': None, 
             'dataset': 'mnist',
             'init_gmm_file': None,
@@ -24,13 +24,13 @@ defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'multivariate_latent': False,
             'rank': 5,
             'covariance_type': 'full', 
-            'epochs':300,
+            'epochs':30,
             'seed': 42}
 
 # wandb.init(config=defaults, project='VADE')
 # config = wandb.config
 SEED = 42
-N_RUNS = 10
+N_RUNS = 1
 # torch.manual_seed(SEED)
 # np.random.seed(SEED)
 
@@ -41,7 +41,7 @@ def main():
         seed = seeds[i].item()
         torch.manual_seed(seed)
         np.random.seed(seed)
-        wandb.init(config=defaults, project='VADE', group='seeds-mnist-full')
+        wandb.init(config=defaults, project='VADE', group='seeds-mnist-full-test')
         config = wandb.config
         wandb.config.update({'seed': seed}, allow_val_change=True)
         model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
