@@ -21,7 +21,7 @@ defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'dataset': 'mnist',
             'init_gmm_file': None,
             'pretrained_model_file': None, 
-            'multivariate_latent': True,
+            'multivariate_latent': False,
             'rank': 5,
             'covariance_type': 'full', 
             'epochs':50,
@@ -47,8 +47,9 @@ def main():
                                  rank=config.rank)
 
     logger = pl.loggers.WandbLogger()
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=5,
-                         callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=10, 
+                         callbacks=[ClusteringEvaluationCallback(), ClusteringEvaluationCallback(ds_type='valid')], 
+                         max_epochs=config.epochs)
 
     trainer.fit(model)
 

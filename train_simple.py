@@ -27,7 +27,8 @@ def main():
                               lr=config.lr, batch_size=config.batch_size)
     logger = pl.loggers.WandbLogger()
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
-                         callbacks=[ClusteringEvaluationCallback(on_start=False, method=config.clustering_method, n_init=1)],
+                         callbacks=[ClusteringEvaluationCallback(on_start=False, method=config.clustering_method),
+                         ClusteringEvaluationCallback(ds_type='train', on_start=False, method=config.clustering_method)],
                          max_epochs=config.epochs)
 
     trainer.fit(model)

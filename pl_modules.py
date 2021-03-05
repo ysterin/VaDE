@@ -25,7 +25,7 @@ from scipy.optimize import linear_sum_assignment as linear_assignment
 class PLVaDE(pl.LightningModule):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, pretrain_lr=2e-3,
                  device='cuda', pretrain_epochs=50, batch_size=1024, pretrained_model_file=None, init_gmm_file=None,
-                 covariance_type='diag', data_size=None, multivariate_latent=False, rank=3, dataset='mnist'):
+                 covariance_type='diag', data_size=None, data_random_seed=42, multivariate_latent=False, rank=3, dataset='mnist'):
         super(PLVaDE, self).__init__()
         self.save_hyperparameters()
         self.bs = batch_size
@@ -51,8 +51,9 @@ class PLVaDE(pl.LightningModule):
             n_sample = self.hparams['data_size']
             to_subset = lambda ds: torch.utils.data.random_split(ds, 
                                                                  [n_sample, len(ds) - n_sample],
-                                                                 torch.Generator().manual_seed(42))[0]
-            self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
+                                                                 torch.Generator().manual_seed(self.hparams['data_random_seed']))[0]
+            # self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
+            self.train_ds = to_subset(self.train_ds)
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
 
 

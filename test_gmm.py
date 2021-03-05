@@ -11,7 +11,7 @@ import sys
 import wandb
 from pathlib import Path
 
-def test_gmm(run_id, ds_type='train', save=False):
+def test_gmm(run_id, ds_type='train', n_runs=5, save=False):
 
     wandb.init(project='AE clustering', resume='must', id=run_id, config=defaults)
     autoencoder = SimpleAutoencoder(n_neurons=wandb.config.n_neurons, dataset=wandb.config.dataset, 
@@ -30,7 +30,7 @@ def test_gmm(run_id, ds_type='train', save=False):
 
     y_true = np.stack([autoencoder.all_ds[i][1] for i in range(len(autoencoder.all_ds))])
     X_encoded = autoencoder.encode_ds(autoencoder.all_ds)
-    for i in range(5):
+    for i in range(n_runs):
         init_gmm = GaussianMixture(10, covariance_type='full', n_init=3)
         y_pred = init_gmm.fit_predict(X_encoded)
         acc = cluster_acc(y_true, y_pred)
@@ -47,7 +47,8 @@ def test_gmm(run_id, ds_type='train', save=False):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('run_id', type=str)
-parser.add_argument('--checkppint_file', type=str, required=False, nargs=1)
+parser.add_argument('--num', type=int, default=5)
+parser.add_argument('--checkpoint_file', type=str, required=False, nargs=1)
 parser.add_argument('--ds_type', type=str, choices=['train', 'valid', 'all'], default='all')
 parser.add_argument('--save', action='store_true')
 
@@ -56,7 +57,15 @@ defaults = {'dataset': 'mnist', 'data_size': None, 'data_random_state': 42}
 if __name__ == '__main__':
     args = parser.parse_args(sys.argv[1:])
     # run_id = args.run_id
-    print(args)
-    test_gmm(args.run_id, args.ds_type, args.save)
-
+    print(args) 
+    test_gmm(args.run_id, args.ds_type, args.num, args.save)
+    # wandb.init(project='AE clustering', resume='must', id=run_id, config=defaults)
+    # autoencoder = SimpleAutoencoder(n_neurons=wandb.config.n_neurons, dataset=wandb.config.dataset, 
+    #                                 data_size=wandb.config.data_size, data_random_state=wandb.config.data_random_state)
+    # autoencoder.prepare_data()
+    # run_path = Path(f'AE clustering/{run_id}')
+    # checkpoint_files = os.listdir(run_path /'checkpoints')
+    # print(checkpoint_files)
+    # autoencoder.load_state_dict(torch.load(run_path /'checkpoints' / checkpoint_files[-1])['state_dict'])
+    # test_gmm(autoencoder)
 

@@ -162,14 +162,11 @@ class TripletVaDE(pl.LightningModule):
             to_subset = lambda ds: torch.utils.data.random_split(ds, 
                                                                  [n_sample, len(ds) - n_sample],
                                                                  torch.Generator().manual_seed(42))[0]
-            self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
+            # self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
+            self.train_ds = to_subset(self.train_ds)
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
-        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'], 
-                                                max_triplets=self.hparams['n_triplets'])
-                                                # transform=transforms.Lambda(lambda x: torch.flatten(x)/256))
-        self.valid_triplet_ds = CombinedDataset(self.valid_ds, data_size=self.hparams['n_samples_for_triplets'],
-                                                max_triplets=self.hparams['n_triplets'])
-                                                # transform=transforms.Lambda(lambda x: torch.flatten(x)/256), seed=42)
+        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'])
+        self.valid_triplet_ds = CombinedDataset(self.valid_ds, data_size=self.hparams['n_samples_for_triplets']) 
             
     def pretrain_model(self):
         n_neurons, pretrain_epochs, batch_norm = self.n_neurons, self.pretrain_epochs, self.batch_norm
