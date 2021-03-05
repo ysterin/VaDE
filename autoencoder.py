@@ -85,18 +85,18 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
             self.evaluate_clustering(trainer, pl_module)
 
 
-def get_autoencoder(n_neurons, batch_norm=False):
-    enc_layers = len(n_neurons)
-    layer_dims = n_neurons + n_neurons[-2::-1]
-    n_layers = len(layer_dims)
-    return nn.Sequential(*[nn.Sequential(nn.Linear(layer_dims[i], layer_dims[i+1]),
-                                         nn.Identity() \
-                                            if i+2 == enc_layers or i+2 == n_layers or not batch_norm \
-                                            else nn.BatchNorm1d(layer_dims[i+1]),
-                                         nn.Identity() \
-                                            if i+2 == enc_layers or i+2 == n_layers \
-                                            else nn.ELU()) \
-                           for i in range(n_layers - 1)])
+# def get_autoencoder(n_neurons, batch_norm=False):
+#     enc_layers = len(n_neurons)
+#     layer_dims = n_neurons + n_neurons[-2::-1]
+#     n_layers = len(layer_dims)
+#     return nn.Sequential(*[nn.Sequential(nn.Linear(layer_dims[i], layer_dims[i+1]),
+#                                          nn.Identity() \
+#                                             if i+2 == enc_layers or i+2 == n_layers or not batch_norm \
+#                                             else nn.BatchNorm1d(layer_dims[i+1]),
+#                                          nn.Identity() \
+#                                             if i+2 == enc_layers or i+2 == n_layers \
+#                                             else nn.ELU()) \
+#                            for i in range(n_layers - 1)])
 
 class LatentDistribution(nn.Module):
     prior = Normal(0, 1)
@@ -113,7 +113,8 @@ class LatentDistribution(nn.Module):
             else:
                 self.logvar_fc = nn.Linear(in_features, out_features)
                 self.logvar_fc.weight.data.zero_()
-                self.logvar_fc.bias.data.zero_()        
+                self.logvar_fc.bias.data.zero_()     
+                self.logvar_fc.bias.data -= 5.0
     
     def forward(self, x):
         mu = self.mu_fc(x)
@@ -199,16 +200,18 @@ def xlogx(x, eps=1e-12):
     xlog = x * (x + eps).log()
     return xlog
 
-def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu'):
+def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu', dropout=0.):
     n_layers = len(n_neurons) - 1
     if activation == 'relu':
         activ_func = nn.ReLU()
     encoder_layers = [nn.Sequential(nn.Linear(n_neurons[i], n_neurons[i+1]),
-                                    activ_func) for i in range(n_layers - 1)]
+                                    activ_func,
+                                    nn.Dropout(dropout) if dropout > 0 else nn.Identity()) for i in range(n_layers - 1)]
     encoder_layers.append(nn.Linear(n_neurons[-2], n_neurons[-1]))
     n_neurons = n_neurons[::-1]
     decoder_layers = [nn.Sequential(nn.Linear(n_neurons[i], n_neurons[i+1]),
-                                    activ_func) for i in range(n_layers - 1)]
+                                    activ_func,
+                                    nn.Dropout(dropout) if dropout > 0 else nn.Identity()) for i in range(n_layers - 1)]
     decoder_layers.append(nn.Sequential(nn.Linear(n_neurons[-2], n_neurons[-1]), nn.Sigmoid()))
     return nn.Sequential(*encoder_layers), nn.Sequential(*decoder_layers)
 
