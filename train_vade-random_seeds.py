@@ -41,7 +41,7 @@ def main():
     seed_sequence = np.random.SeedSequence(SEED)
     streams = [np.random.default_rng(ss) for ss in seed_sequence.spawn(N_RUNS)]
     for i in range(N_RUNS):
-        seed = int.from_bytes(streams[i].bytes(8), 'big')
+        seed = int.from_bytes(streams[i].bytes(6), 'big')
         torch.manual_seed(seed)
         np.random.seed(seed)
         wandb.init(config=defaults, project='VADE', group='seeds-mnist-2k-1')
