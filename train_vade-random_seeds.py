@@ -39,7 +39,7 @@ def main():
     # torch.manual_seed(SEED)
     # seeds = torch.randint(10000000, size=(N_RUNS,))
     seed_sequence = np.random.SeedSequence(SEED)
-    streams = [np.random.default_generator(ss) for ss in seed_sequence.spawn(N_RUNS)]
+    streams = [np.random.default_rng(ss) for ss in seed_sequence.spawn(N_RUNS)]
     for i in range(N_RUNS):
         seed = int.from_bytes(streams[i].bytes(8), 'big')
         torch.manual_seed(seed)
