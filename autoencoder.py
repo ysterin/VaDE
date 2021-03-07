@@ -204,6 +204,12 @@ def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu', dropout=0
     n_layers = len(n_neurons) - 1
     if activation == 'relu':
         activ_func = nn.ReLU()
+    elif activation == 'elu':
+        activ_func = nn.ELU()
+    elif activation == 'prelu':
+        activ_func = nn.PRELU()
+    elif activation == 'leaky-relu':
+        activ_func = nn.LeakyReLU()
     encoder_layers = [nn.Sequential(nn.Linear(n_neurons[i], n_neurons[i+1]),
                                     activ_func,
                                     nn.Dropout(dropout) if dropout > 0 else nn.Identity()) for i in range(n_layers - 1)]
@@ -217,21 +223,21 @@ def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu', dropout=0
 
 
 class SimpleAutoencoder(pl.LightningModule):
-    def __init__(self, n_neurons, lr=1e-3, batch_size=256, dataset='mnist', data_size=None, data_random_state=42):
+    def __init__(self, n_neurons, dropout=0., activation='relu', lr=1e-3, batch_size=256, dataset='mnist', data_size=None, data_random_state=42):
         super(SimpleAutoencoder, self).__init__()
         self.save_hyperparameters()
         self.batch_size = batch_size
         self.k = n_neurons[-1]
-        self.encoder, self.decoder = get_encoder_decoder(n_neurons, batch_norm=False)
+        self.encoder, self.decoder = get_encoder_decoder(n_neurons, batch_norm=False, dropout=dropout, activation=activation)
 
     def forward(self, x):
         return self.decoder(self.encoder(x))
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), self.hparams['lr'])
-        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.2 ,patience=20, verbose=True, min_lr=1e-6)
-        scheduler = {'optimizer': opt, 'scheduler': sched, 'interval': 'epoch', 'monitor': 'val_checkpoint_on', 'reduce_on_plateau': True}
-        return scheduler
+        # sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.2, patience=20, verbose=True, min_lr=1e-6)
+        # scheduler = {'optimizer': opt, 'scheduler': sched, 'interval': 'epoch', 'monitor': 'val_checkpoint_on', 'reduce_on_plateau': True}
+        return opt
 
     def shared_step(self, batch, batch_idx):
         bx, by = batch
@@ -326,7 +332,8 @@ class SimpleAutoencoder(pl.LightningModule):
 
 
 class VaDE(nn.Module):
-    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, device='cuda', rank=3,
+    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, dropout=0., activation='relu', k=10, 
+                 lr=1e-3, device='cuda', rank=3,
                  pretrain_model=None, init_gmm=None, logger=None, covariance_type='diag', multivariate_latent=False):
         super(VaDE, self).__init__()
         self.k = k
@@ -346,7 +353,7 @@ class VaDE(nn.Module):
             self.gmm_params = [self.mixture_logits, self.mu_c, self.scale_tril_c]
         else:
             raise Exception(f"illigal covariance_type {covariance_type}, can only be 'full' or 'diag'")
-        encoder, decoder = get_encoder_decoder(n_neurons, activation='relu')
+        encoder, decoder = get_encoder_decoder(n_neurons, activation=activation, dropout=dropout)
         self.encoder = encoder[:-1]
         if self.multivariate_latent:
             self.latent_dist = LatentLowRankMultivariave(n_neurons[-2], n_neurons[-1], rank=rank)
@@ -375,8 +382,6 @@ class VaDE(nn.Module):
             self.logger('train/' + metric, value, **kwargs)
         else:
             self.logger('valid/' + metric, value, **kwargs)
-        # else:
-        #     self.logger(metric, value, **kwargs)        
     
     def forward(self, bx):
         x = self.encoder(bx)

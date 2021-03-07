@@ -1,4 +1,6 @@
 import os
+
+from torch.nn.modules.dropout import Dropout
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 import torch
@@ -54,7 +56,8 @@ def best_of_n_gmm_ray(x, n_clusters=10, n=10, covariance_type='full', n_init=1):
 
 
 class PLVaDE(pl.LightningModule):
-    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, k=10, lr=1e-3, pretrain_lr=2e-3,
+    def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, dropout=0., activation='relu', k=10, 
+                 lr=1e-3, pretrain_lr=2e-3,
                  device='cuda', pretrain_epochs=50, batch_size=1024, pretrained_model_file=None, init_gmm_file=None,
                  covariance_type='diag', data_size=None, data_random_seed=42, multivariate_latent=False, rank=3, dataset='mnist'):
         super(PLVaDE, self).__init__()
@@ -63,7 +66,7 @@ class PLVaDE(pl.LightningModule):
         # self.pretrained_params_file = pretrained_params_file
         pretrain_model, init_gmm = self.init_params(n_neurons, batch_norm, k, pretrain_epochs)
         self.pretrained_model, self.init_gmm = [pretrain_model], init_gmm
-        self.model = VaDE(n_neurons=n_neurons, k=k, device=device, 
+        self.model = VaDE(n_neurons=n_neurons, k=k, device=device, activation=activation, dropout=dropout,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log,
                           covariance_type=covariance_type, multivariate_latent=multivariate_latent, rank=rank)
         
@@ -90,7 +93,8 @@ class PLVaDE(pl.LightningModule):
 
     def init_params(self, n_neurons, batch_norm, k, pretrain_epochs):
         self.prepare_data()
-        pretrain_model = SimpleAutoencoder(n_neurons, lr=self.hparams['pretrain_lr'])
+        pretrain_model = SimpleAutoencoder(n_neurons, lr=self.hparams['pretrain_lr'], 
+                            activation=self.hparams['activation'], dropout=self.hparams['dropout'])
         pretrain_model.val_dataloader = self.val_dataloader
         pretrain_model.train_dataloader = self.train_dataloader
         if self.hparams['pretrained_model_file'] is None:
