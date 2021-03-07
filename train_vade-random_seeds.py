@@ -12,28 +12,28 @@ from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, c
 #pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
 defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
-            'dropout': 0.3, 
+            'dropout': 0., 
             'activation': 'relu',
             'lr': 2e-3, 
             'pretrain_lr': 3e-4,
-            'batch_size': 64, 
+            'batch_size': 256, 
             'batch_norm': False,
             'device': 'cuda',
-            'pretrain_epochs': 200, 
-            'data_size': 2000, 
+            'pretrain_epochs': 100, 
+            'data_size': None, 
             'dataset': 'mnist',
             'init_gmm_file': None,
             'pretrained_model_file': None, 
             'multivariate_latent': False,
             'rank': 5,
             'covariance_type': 'full', 
-            'epochs':100,
+            'epochs':300,
             'seed': 42}
 
 # wandb.init(config=defaults, project='VADE')
 # config = wandb.config
 SEED = 42
-N_RUNS = 1
+N_RUNS = 10
 # torch.manual_seed(SEED)
 # np.random.seed(SEED)
 
@@ -46,7 +46,7 @@ def main():
         seed = int.from_bytes(streams[i].bytes(4), 'big')
         torch.manual_seed(seed)
         np.random.seed(seed)
-        wandb.init(config=defaults, project='VADE', group='seeds-mnist-2k-1')
+        wandb.init(config=defaults, project='VADE', group='seeds-mnist-all-1')
         config = wandb.config
         wandb.config.update({'seed': seed}, allow_val_change=True)
         model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
