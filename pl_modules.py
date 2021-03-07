@@ -2,6 +2,7 @@ import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 import torch
+import wandb
 import pickle
 from torch.utils.data import DataLoader, Dataset, IterableDataset, TensorDataset
 from torch import nn, distributions
@@ -20,16 +21,35 @@ from torch.utils.data import ConcatDataset
 from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
 from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
+import ray
 
+ray.init()
 
 def best_of_n_gmm(x, n_clusters=10, n=10, covariance_type='full', n_init=1):
     scores_dict = {}
     for i in range(n):
-        gmm = GaussianMixture(n_clusters)
+        gmm = GaussianMixture(n_clusters, covariance_type=covariance_type, n_init=n_init)
         gmm.fit(x)
         log_likelihood = gmm.score(x)
         scores_dict[gmm] = log_likelihood
     best_gmm, best_score = max(scores_dict.items(), key=lambda o: o[1])
+    return best_gmm
+
+@ray.remote
+def fit_gmm(x, n_clusters=10, covariance_type='full', n_init=1, random_state=None):
+    gmm = GaussianMixture(n_components=n_clusters, covariance_type=covariance_type, n_init=n_init, random_state=random_state)
+    gmm.fit(x)
+    log_likelihood = gmm.score(x)
+    return gmm, log_likelihood
+
+def best_of_n_gmm_ray(x, n_clusters=10, n=10, covariance_type='full', n_init=1):
+    # ray.init(ignore_reinit_error=True)
+    ss = np.random.SeedSequence(42)
+    random_states = [np.random.RandomState(np.random.PCG64(c)) for c in ss.spawn(n)]
+    x_id =  ray.put(x)
+    scores = ray.get([fit_gmm.remote(x_id, n_clusters, covariance_type, n_init, st) for st in random_states])
+    best_gmm, best_score = max(scores, key=lambda o: o[1])
+#     ray.shutdown()
     return best_gmm
 
 
@@ -74,22 +94,20 @@ class PLVaDE(pl.LightningModule):
         pretrain_model.val_dataloader = self.val_dataloader
         pretrain_model.train_dataloader = self.train_dataloader
         if self.hparams['pretrained_model_file'] is None:
-            logger = pl.loggers.WandbLogger(project='AE clustering')
+            # wandb.init()
+            # logger = pl.loggers.WandbLogger(project='AE clustering', offline=True, log_model=True)
             # trainer = pl.Trainer(gpus=1, logger=logger, callbacks=[ClusteringEvaluationCallback()],
             #                      max_epochs=pretrain_epochs, progress_bar_refresh_rate=10)
-            trainer = pl.Trainer(gpus=1, max_epochs=pretrain_epochs, progress_bar_refresh_rate=10)
+            trainer = pl.Trainer(gpus=1, max_epochs=pretrain_epochs, progress_bar_refresh_rate=30)
             trainer.fit(pretrain_model)
+            # wandb.finish()
         else:
             pretrain_model.load_state_dict(torch.load(self.hparams['pretrained_model_file'])['state_dict'])
-        # transform = transforms.Compose([transforms.ToTensor(), 
-        #                         transforms.Lambda(lambda x: torch.flatten(x))])
-        # dataset = MNIST("data", download=True, transform=transform)
         if self.hparams['init_gmm_file'] is None:
             X_encoded = pretrain_model.encode_ds(self.all_ds)
-            # X_encoded = pretrain_model.encode_ds(dataset)
             # init_gmm = GaussianMixture(k, covariance_type=self.hparams['covariance_type'], n_init=3)
             # init_gmm.fit(X_encoded)
-            init_gmm = best_of_n_gmm(X_encoded, k, covariance_type=self.hparams['covariance_type'], n=10)
+            init_gmm = best_of_n_gmm_ray(X_encoded, k, covariance_type=self.hparams['covariance_type'], n=10, n_init=3)
         else:
             with open(self.hparams['init_gmm_file'], 'rb') as file:
                 init_gmm = pickle.load(file)

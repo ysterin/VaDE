@@ -2,6 +2,7 @@ import torch
 import pytorch_lightning as pl
 import importlib
 import numpy as np
+from torch._C import default_generator
 import wandb
 # from triplet_vade import TripletVaDE
 #from triplet_vade import TripletVaDE
@@ -13,39 +14,42 @@ from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, c
 defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'lr': 2e-3, 
             'pretrain_lr': 3e-4,
-            'batch_size': 256, 
+            'batch_size': 64, 
             'batch_norm': False,
             'device': 'cuda',
-            'pretrain_epochs': 50, 
-            'data_size': None, 
+            'pretrain_epochs': 200, 
+            'data_size': 2000, 
             'dataset': 'mnist',
             'init_gmm_file': None,
             'pretrained_model_file': None, 
             'multivariate_latent': False,
             'rank': 5,
             'covariance_type': 'full', 
-            'epochs':30,
+            'epochs':300,
             'seed': 42}
 
 # wandb.init(config=defaults, project='VADE')
 # config = wandb.config
 SEED = 42
-N_RUNS = 1
+N_RUNS = 10
 # torch.manual_seed(SEED)
 # np.random.seed(SEED)
 
 def main():
-    torch.manual_seed(SEED)
-    seeds = torch.randint(10000000, size=(N_RUNS,))
+    # torch.manual_seed(SEED)
+    # seeds = torch.randint(10000000, size=(N_RUNS,))
+    seed_sequence = np.random.SeedSequence(SEED)
+    streams = [np.random.default_generator(ss) for ss in seed_sequence.spawn(N_RUNS)]
     for i in range(N_RUNS):
-        seed = seeds[i].item()
+        seed = int.from_bytes(streams[i].bytes(8), 'big')
         torch.manual_seed(seed)
         np.random.seed(seed)
-        wandb.init(config=defaults, project='VADE', group='seeds-mnist-full-test')
+        wandb.init(config=defaults, project='VADE', group='seeds-mnist-2k-1')
         config = wandb.config
         wandb.config.update({'seed': seed}, allow_val_change=True)
         model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
                                      lr=config.lr,
+                                     pretrain_lr=config.pretrain_lr,
                                      data_size=config.data_size,
                                      dataset=config.dataset,
                                      batch_size=config.batch_size,

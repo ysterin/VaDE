@@ -35,6 +35,7 @@ np.random.seed(SEED)
 def main():
     model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
                                  lr=config.lr,
+                                 pretrain_lr=config.pretrain_lr,
                                  data_size=config.data_size,
                                  dataset=config.dataset,
                                  batch_size=config.batch_size,
