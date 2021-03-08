@@ -4,6 +4,8 @@ import importlib
 import numpy as np
 from torch._C import default_generator
 import wandb
+import ray
+import argparse
 # from triplet_vade import TripletVaDE
 #from triplet_vade import TripletVaDE
 from pl_modules import PLVaDE
@@ -11,42 +13,37 @@ from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, c
 
 #pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
-defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
-            'dropout': 0., 
-            'activation': 'relu',
-            'lr': 2e-3, 
-            'pretrain_lr': 3e-4,
-            'batch_size': 256, 
-            'batch_norm': False,
-            'device': 'cuda',
-            'pretrain_epochs': 100, 
-            'data_size': None, 
-            'dataset': 'mnist',
-            'init_gmm_file': None,
-            'pretrained_model_file': None, 
-            'multivariate_latent': False,
-            'rank': 5,
-            'covariance_type': 'full', 
-            'epochs':300,
-            'seed': 42}
+# defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
+#             'dropout': 0., 
+#             'activation': 'relu',
+#             'lr': 2e-3, 
+#             'pretrain_lr': 3e-4,
+#             'batch_size': 256, 
+#             'batch_norm': False,
+#             'device': 'cuda',
+#             'pretrain_epochs': 100, 
+#             'data_size': None, 
+#             'dataset': 'mnist',
+#             'init_gmm_file': None,
+#             'pretrained_model_file': None, 
+#             'multivariate_latent': False,
+#             'rank': 5,
+#             'covariance_type': 'full', 
+#             'epochs':300,
+#             'seed': 42}
 
-# wandb.init(config=defaults, project='VADE')
-# config = wandb.config
 SEED = 42
 N_RUNS = 10
-# torch.manual_seed(SEED)
-# np.random.seed(SEED)
 
 def main():
-    # torch.manual_seed(SEED)
-    # seeds = torch.randint(10000000, size=(N_RUNS,))
     seed_sequence = np.random.SeedSequence(SEED)
     streams = [np.random.default_rng(ss) for ss in seed_sequence.spawn(N_RUNS)]
     for i in range(N_RUNS):
         seed = int.from_bytes(streams[i].bytes(4), 'big')
         torch.manual_seed(seed)
         np.random.seed(seed)
-        wandb.init(config=defaults, project='VADE', group='seeds-mnist-all-1')
+        ray.init(ignore_reinit_error=True)
+        wandb.init(project='VADE')
         config = wandb.config
         wandb.config.update({'seed': seed}, allow_val_change=True)
         model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
@@ -70,8 +67,8 @@ def main():
                              callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
 
         trainer.fit(model)
-        wandb.finish()
-        import ray; ray.shutdown()
+        wandb.join()
+        ray.shutdown()
 
 
 if __name__ == '__main__':
