@@ -10,6 +10,7 @@ triplets_model VADE/
 wandb/
 __pycache__/
 *.log
+*log*.txt
 **/logs
 *.ckpt
 #*.pkl

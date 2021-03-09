@@ -24,16 +24,16 @@ pretrain_lr:
   value: 0.0003
 batch_size:
   desc: batch size
-  value: 256
+  value: 64
 batch_norm:
   desc: whether to use batch normalization
   value: false
 epochs:
   desc: number of epochs
-  value: 200
+  value: 300
 pretrain_epochs:
   desc: number of epochs for pretraining
-  value: 100
+  value: 200
 data_size:
   desc: size of the data subset to use
   value: 2000

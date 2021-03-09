@@ -1,4 +1,5 @@
 import os
+from pytorch_lightning import profiler
 
 from torch.nn.modules.dropout import Dropout
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
@@ -119,11 +120,11 @@ class PLVaDE(pl.LightningModule):
         
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=8)
+        return DataLoader(self.train_ds, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=1, pin_memory=True)
                         #   num_workers=4, pin_memory=True, persistent_workers=False, prefetch_factor=8)
 
     def val_dataloader(self):
-        return DataLoader(self.valid_ds, batch_size=self.hparams['batch_size']*4, shuffle=False, num_workers=8) 
+        return DataLoader(self.valid_ds, batch_size=self.hparams['batch_size']*4, shuffle=False, num_workers=1, pin_memory=True) 
                         #   num_workers=4, pin_memory=True, persistent_workers=False, prefetch_factor=8)
 
     def configure_optimizers(self):
@@ -149,11 +150,11 @@ class PLVaDE(pl.LightningModule):
     def cluster_data(self, dl=None, ds_type='all'):
         if not dl:   
             if ds_type=='all':
-                dl = DataLoader(self.all_ds, batch_size=4096, shuffle=False, num_workers=1)
+                dl = DataLoader(self.all_ds, batch_size=4096, shuffle=False, num_workers=0)
             elif ds_type=='train':
-                dl = DataLoader(self.train_ds, batch_size=4096, shuffle=False, num_workers=1, pin_memory=True)
+                dl = DataLoader(self.train_ds, batch_size=4096, shuffle=False, num_workers=0, pin_memory=False)
             elif ds_type=='valid':
-                dl = DataLoader(self.valid_ds, batch_size=4096, shuffle=False, num_workers=1, pin_memory=True)
+                dl = DataLoader(self.valid_ds, batch_size=4096, shuffle=False, num_workers=0, pin_memory=False)
             else:
                 raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
@@ -194,13 +195,14 @@ if __name__ == '__main__':
     # train_ds, valid_ds = map(to_tensor_dataset, [train_ds, valid_ds])
     # print(train_ds[3])
     # exit()
-    model = PLVaDE(n_neurons=[784, 512, 512, 2048, 10], k=10, lr=2e-3, covariance_type='full', batch_size=256, pretrain_epochs=10,
-                   pretrained_model_file="wandb/run-20210217_191051-dla63r4s/files/AE clustering/dla63r4s/checkpoints/epoch=49-step=11749.ckpt", 
-                   init_gmm_file='saved_gmm_init/dla63r4s/gmm-full-acc=0.65.pkl',
-                   multivariate_latent=True, rank=5, device='cuda:0', dataset='fmnist')
+    model = PLVaDE(n_neurons=[784, 2048, 2048, 8192, 10], k=10, lr=2e-3, covariance_type='full', batch_size=2**8, pretrain_epochs=20,
+                #    pretrained_model_file="AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt", 
+                #    init_gmm_file='saved_gmm_init/5wn5ybl3/gmm-full-acc=0.95.pkl',
+                   multivariate_latent=False, rank=5, device='cuda', dataset='mnist')
 
-    logger = pl.loggers.WandbLogger(project='VADE', group='Fmnist')
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, max_epochs=10, 
-                        callbacks=[ClusteringEvaluationCallback()], log_every_n_steps=1, profiler='simple')
+    logger = pl.loggers.WandbLogger(project='VADE')
+    # profiler = pl.profiler.AdvancedProfiler(output_filename='profiler_log_4096.txt')
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, max_epochs=5,
+                        callbacks=[ClusteringEvaluationCallback(ds_type='valid')], log_every_n_steps=5, profiler='simple')
 
     trainer.fit(model)

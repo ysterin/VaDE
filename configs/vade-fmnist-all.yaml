@@ -24,7 +24,7 @@ pretrain_lr:
   value: 0.0003
 batch_size:
   desc: batch size
-  value: 64
+  value: 256
 batch_norm:
   desc: whether to use batch normalization
   value: false
