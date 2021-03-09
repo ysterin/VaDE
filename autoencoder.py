@@ -20,6 +20,10 @@ from torch import autograd
 from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
+from six.moves import urllib    
+opener = urllib.request.build_opener()
+opener.addheaders = [('User-agent', 'Mozilla/5.0')]
+urllib.request.install_opener(opener)
 
 
 transform = transforms.Compose([transforms.ToTensor(), 
