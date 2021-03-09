@@ -17,7 +17,7 @@ from sklearn.mixture import GaussianMixture
 from sklearn import metrics
 from torch import autograd
 from torch.utils.data import ConcatDataset
-from autoencoder import SimpleAutoencoder, VaDE
+from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
 from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
@@ -120,7 +120,7 @@ class TripletVaDE(pl.LightningModule):
                  k=10, 
                  dataset='mnist',
                  lr=1e-3, 
-                 lr_pretrain=3e-4,
+                 pretrain_lr=3e-4,
                  lr_gmm = None,
                  batch_size=256, 
                  device='cuda', 
@@ -171,7 +171,7 @@ class TripletVaDE(pl.LightningModule):
     def pretrain_model(self):
         n_neurons, pretrain_epochs, batch_norm = self.n_neurons, self.pretrain_epochs, self.batch_norm
         self.prepare_data()
-        pretrained_model = SimpleAutoencoder(n_neurons, lr=self.hparams['lr_pretrain'])
+        pretrained_model = SimpleAutoencoder(n_neurons, lr=self.hparams['pretrain_lr'])
         pretrained_model.val_dataloader = lambda: DataLoader(self.valid_ds, batch_size=256, shuffle=False, num_workers=8)
         pretrained_model.train_dataloader = lambda: DataLoader(self.train_ds, batch_size=256, shuffle=True, num_workers=8)
         gpus = 1 if torch.cuda.is_available() else 0
@@ -214,9 +214,10 @@ class TripletVaDE(pl.LightningModule):
         return [opt], [sched]
 
     def triplet_loss(self, anchor_z_dist, pos_z_dist, neg_z_dist):
-        anchor_z, pos_z, neg_z = anchor_z_dist.mean, pos_z_dist.mean, neg_z_dist.mean
+        anchor_z, pos_z, neg_z = anchor_z_dist.mean.squeeze(1), pos_z_dist.mean.squeeze(1), neg_z_dist.mean.squeeze(1)
         anchor_z, pos_z, neg_z = map(lambda t: t / t.norm(dim=1, keepdim=True), [anchor_z, pos_z, neg_z])
         d1, d2 = torch.linalg.norm(anchor_z - pos_z, dim=1), torch.linalg.norm(anchor_z - neg_z, dim=1)
+        assert len(anchor_z.shape) == 2
         results = {}
         results['anchor_pos_distance'] = d1.mean()
         results['anchor_neg_distance'] = d2.mean()
@@ -230,6 +231,7 @@ class TripletVaDE(pl.LightningModule):
 
     def triplet_loss_kl(self, anchor_z_dist, pos_z_dist, neg_z_dist):
         d1, d2 = kl_distance(anchor_z_dist, pos_z_dist), kl_distance(anchor_z_dist, neg_z_dist)
+        
         results = {}
         results['anchor_pos_distance_kl'] = d1.mean()
         results['anchor_neg_distance_kl'] = d2.mean()
@@ -244,14 +246,19 @@ class TripletVaDE(pl.LightningModule):
     def shared_step(self, batch, batch_idx):
         bx, triplet_dict = batch
         result = self.model.shared_step(bx)
-        triplet_batch = torch.stack([triplet_dict[s] for s in ['anchor', 'positive', 'negative']])
-        triplet_encs = self.model.encoder(triplet_batch)
-        triplet_dists = self.model.latent_dist(triplet_encs)
-        triplet_dists = split_dist(triplet_dists, n=3)
+        # triplet_batch = torch.stack([triplet_dict[s] for s in ['anchor', 'positive', 'negative']])
+        # triplet_encs = self.model.encoder(triplet_batch)
+        # triplet_dists = self.model.latent_dist(triplet_encs)
+        # triplet_dists = split_dist(triplet_dists, n=3)
+        triplet_dists = [
+            self.model.latent_dist(self.model.encoder(triplet_dict[s]))
+            for s in ['anchor', 'positive', 'negative']
+        ]
         result['main_loss'] = result['loss'].detach().clone()
         if self.hparams['triplet_loss_alpha'] > 0:
             result.update(self.triplet_loss(*triplet_dists))
             result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
+            # result['loss'] = result['triplet_loss'] * 20
         if self.hparams['triplet_loss_alpha_kl'] > 0:
             result.update(self.triplet_loss_kl(*triplet_dists))
             result['loss'] += self.hparams['triplet_loss_alpha_kl'] * result['triplet_loss_kl']
@@ -283,10 +290,11 @@ class TripletVaDE(pl.LightningModule):
                 raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
 
-pretrained_model_file = None # "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
-init_gmm_file = None # "saved_gmm_init/5wn5ybl3/gmm-full-0.pkl"
+pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
+init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-acc=0.95.pkl"
 if __name__=='__main__':
-    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=1e-3,
+    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha_kl=1.0,
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
-    trainer = pl.Trainer(gpus=1, max_epochs=5,  progress_bar_refresh_rate=10)
+    logger = pl.loggers.WandbLogger(project='TripletVaDE')
+    trainer = pl.Trainer(gpus=1, max_epochs=20, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback()])
     trainer.fit(model)
