@@ -24,16 +24,16 @@ pretrain_lr:
   value: 0.0003
 batch_size:
   desc: batch size
-  value: 256
+  value: 64
 batch_norm:
   desc: whether to use batch normalization
   value: false
 epochs:
   desc: number of epochs
-  value: 300
+  value: 200
 pretrain_epochs:
   desc: number of epochs for pretraining
-  value: 200
+  value: 300
 data_size:
   desc: size of the data subset to use
   value: 2000
@@ -61,22 +61,3 @@ device:
 seed: 
   desc: seed to use for random numbers
   value: 42
-
-  # {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
-  #           'dropout': 0., 
-  #           'activation': 'relu',
-  #           'lr': 2e-3, 
-  #           'pretrain_lr': 3e-4,
-  #           'batch_size': 256, 
-  #           'batch_norm': False,
-  #           'device': 'cuda',
-  #           'pretrain_epochs': 100, 
-  #           'data_size': None, 
-  #           'dataset': 'mnist',
-  #           'init_gmm_file': None,
-  #           'pretrained_model_file': None, 
-  #           'multivariate_latent': False,
-  #           'rank': 5,
-  #           'covariance_type': 'full', 
-  #           'epochs':300,
-  #           'seed': 42}

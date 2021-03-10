@@ -50,6 +50,7 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
     def __init__(self, on_start=True, **kwargs):
         super(ClusteringEvaluationCallback, self).__init__()
         self.on_start = on_start
+        self.idx = -1
         self.kwargs = kwargs
         if 'ds_type' not in self.kwargs:
             self.kwargs['ds_type'] = 'all'
@@ -127,7 +128,7 @@ class LatentDistribution(nn.Module):
         else:
             logvar = self.logvar_fc(x)
             sigma = torch.exp(logvar / 2)
-        self.dist = D.Independent(Normal(mu, sigma), 1)
+        self.dist = D.Independent(Normal(mu.unsqueeze(1), sigma.unsqueeze(1)), 1)
         return self.dist
     
     def sample(self, l=1):
@@ -157,7 +158,7 @@ class LatentLowRankMultivariave(nn.Module):
         loc = self.mu_fc(x)
         cov_diag = self.log_cov_diag_fc(x).exp()
         cov_factor = self.cov_factor_fc(x).view(bs, self.out_features, self.rank)
-        self.dist = D.LowRankMultivariateNormal(loc, cov_factor=cov_factor, cov_diag=cov_diag)
+        self.dist = D.LowRankMultivariateNormal(loc.unsqueeze(1), cov_factor=cov_factor.unsqueeze(1), cov_diag=cov_diag.unsqueeze(1))
         return self.dist
     
     def sample(self, l=1):
@@ -423,19 +424,17 @@ class VaDE(nn.Module):
         z_dist = self.latent_dist(x)
         if z_dist.stddev.max() > 100:
             import pdb; pdb.set_trace()
-        self.log("latent dist std", z_dist.stddev.mean().detach())
-        z = z_dist.rsample()
+        self.log("latent dist std", z_dist.stddev.mean())
+        z = z_dist.rsample().squeeze(1)
         x_dist = self.out_dist(self.decoder(z))
         x_recon_loss = - x_dist.log_prob(bx).sum(dim=-1)
-        # bce_loss = F.binary_cross_entropy(torch.clamp(x_dist.mean, 1e-6, 1.0-1e-6), bx)
-        # bce_loss = F.binary_cross_entropy(x_dist.mean, bx, reduction='mean')
         ###################################
-        # import pdb; pdb.set_trace()
         log_p_z_c = self.component_distribution.log_prob(z.unsqueeze(1))
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
         q_c_z = log_q_c_z.exp()
 
-        kl_divergences = torch.stack([_kl_divergence(z_dist, self.comp_dists[i]) for i in range(self.k)], dim=-1)
+        # kl_divergences = torch.stack([_kl_divergence(z_dist, self.comp_dists[i]) for i in range(self.k)], dim=-1)
+        kl_divergences = _kl_divergence(z_dist, self.component_distribution)
         kl_div1 = torch.einsum('ij,ij->i', kl_divergences, q_c_z)
         kl_div2 = torch.einsum('ij,ij->i', q_c_z, log_q_c_z - self.mixture_logits.log_softmax(dim=-1))
         kl_loss = kl_div1 + kl_div2
@@ -459,7 +458,7 @@ class VaDE(nn.Module):
         true_labels, predicted_labels, X_encoded = [], [], []
         with torch.no_grad():
             for bx, by in dl:
-                x_encoded = self.latent_dist(self.encoder(bx.cuda())).mean
+                x_encoded = self.latent_dist(self.encoder(bx.cuda())).mean.squeeze(dim=1)
                 X_encoded.append(x_encoded)
                 true_labels.append(by)
                 log_p_z_given_c = self.component_distribution.log_prob(x_encoded.unsqueeze(1))
