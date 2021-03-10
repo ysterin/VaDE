@@ -54,7 +54,7 @@ rank:
   value: null
 covariance_type:
   desc: covariance type of Gaussians in the Gaussian Mixture model
-  value: full
+  value: diag 
 device: 
   desc: device to use - cuda (for gpu) or cpu
   value: cuda
