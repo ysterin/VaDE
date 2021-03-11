@@ -56,7 +56,7 @@ def main():
 
     logger = pl.loggers.WandbLogger()
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
-                         callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
+                         callbacks=[ClusteringEvaluationCallback(), ClusteringEvaluationCallback(ds_type='train'), ClusteringEvaluationCallback(ds_type='valid')], max_epochs=config.epochs)
 
     trainer.fit(triplets_model)
 
