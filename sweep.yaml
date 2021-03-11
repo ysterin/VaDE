@@ -8,24 +8,14 @@ parameters:
   pretrained_model_file:
     # value: pretrained_models/prime-night-30/autoencoder-epoch=29.ckpt
     value: "wandb/run-20210311_143836-y7fspaoh/files/AE-clustering/y7fspaoh/checkpoints/epoch=299-step=11999.ckpt"
-    #  gmm_init_file:
-    #   values: ["saved_gmm_init/y7fspaoh/gmm-full-acc=0.82.pkl", "saved_gmm_init/y7fspaoh/gmm-full-acc=0.75.pkl"]
+  gmm_init_file:
+    values: ["saved_gmm_init/y7fspaoh/gmm-full-acc=0.82.pkl"]
   lr:
     min: 0.001
     max: 0.003
   epochs:
     value: 50
-  # triplet_loss_alpha_kl:
-  #   distribution: log_uniform
-  #   min: -2
-  #   max: 2
-  # triplet_loss_margin_kl:
-  #   min: 0
-  #   max: 50
-  # triplet_loss_alpha_kl:
-  #   value: 30
   triplet_loss_alpha: 
-    # value: 0.0
     distribution: log_uniform
     min: 3
     max: 6

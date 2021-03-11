@@ -26,7 +26,8 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'data_size': None, 
             'dataset': 'mnist',
             'n_samples_for_triplets': None,
-            'pretrained_model_file': pretriained_model, 
+            'pretrained_model_file': None, 
+            'init_gmm_file': None,
             'covariance_type': 'full', 
             'epochs':50}
 
@@ -44,6 +45,7 @@ def main():
                                  batch_size=config.batch_size,
                                  pretrain_epochs=config.pretrain_epochs, 
                                  pretrained_model_file=config.pretrained_model_file,
+                                 init_gmm_file=config.init_gmm_file,
                                  device=config.device,
                                  triplet_loss_margin=config.triplet_loss_margin,
                                  triplet_loss_alpha=config.triplet_loss_alpha,
