@@ -380,7 +380,7 @@ class VaDE(nn.Module):
             self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
             self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
         self.component_distribution = self._component_distribution()
-        self.comp_dists = self._comp_dists()
+        # self.comp_dists = self._comp_dists()
 
     def log(self, metric, value, **kwargs):
         if self.training:
@@ -405,6 +405,14 @@ class VaDE(nn.Module):
         x = self.encoder(bx)
         return self.latent_dist(x)
 
+    # returns logits of the ptobability of x to belong to each cluster
+    def classification_logits(self, bx):
+        z_dist = self.encode(bx)
+        z = z_dist.rsample()
+        log_p_z_c = self.component_distribution.log_prob(z)
+        log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
+        
+
     # @property
     def _component_distribution(self):
         if self.covariance_type == 'diag':
@@ -412,12 +420,12 @@ class VaDE(nn.Module):
         elif self.covariance_type == 'full':
             return D.MultivariateNormal(self.mu_c, scale_tril=self.scale_tril_c)
 
-    # @property p
-    def _comp_dists(self):
-        if self.covariance_type == 'diag':
-            return [D.Independent(D.Normal(self.mu_c[i], self.sigma_c[i]), 1) for i in range(self.k)]
-        elif self.covariance_type == 'full':
-            return  [D.MultivariateNormal(self.mu_c[i], scale_tril=self.scale_tril_c[i]) for i in range(self.k)]
+    # # @property p
+    # def _comp_dists(self):
+    #     if self.covariance_type == 'diag':
+    #         return [D.Independent(D.Normal(self.mu_c[i], self.sigma_c[i]), 1) for i in range(self.k)]
+    #     elif self.covariance_type == 'full':
+    #         return  [D.MultivariateNormal(self.mu_c[i], scale_tril=self.scale_tril_c[i]) for i in range(self.k)]
     
     def shared_step(self, bx):
         x = self.encoder(bx)

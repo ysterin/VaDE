@@ -187,22 +187,14 @@ def test_gmm():
 
 
 if __name__ == '__main__':
-    # test_gmm()
-    # exit()
-    # train_ds = MNIST("data", download=True)
-    # valid_ds = MNIST("data", download=True, train=False)
-    # to_tensor_dataset = lambda ds: TensorDataset(ds.data.cuda().view(-1, 28**2).float()/255., ds.targets.cuda())
-    # train_ds, valid_ds = map(to_tensor_dataset, [train_ds, valid_ds])
-    # print(train_ds[3])
-    # exit()
     model = PLVaDE(n_neurons=[784, 500, 500, 2000, 10], k=10, lr=2e-3, pretrain_lr=3e-4, covariance_type='full', batch_size=2**8, pretrain_epochs=100,
-                #    pretrained_model_file="AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt", 
-                #    init_gmm_file='saved_gmm_init/5wn5ybl3/gmm-full-acc=0.95.pkl',
+                   pretrained_model_file="AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt", 
+                   init_gmm_file='saved_gmm_init/5wn5ybl3/gmm-full-acc=0.95.pkl',
                    multivariate_latent=False, rank=5, device='cuda', dataset='mnist')
 
     logger = pl.loggers.WandbLogger(project='VADE')
     # profiler = pl.profiler.AdvancedProfiler(output_filename='profiler_log_4096.txt')
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, max_epochs=100,
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, max_epochs=1,
                         callbacks=[ClusteringEvaluationCallback(ds_type='valid')], log_every_n_steps=5, profiler='simple')
 
     trainer.fit(model)

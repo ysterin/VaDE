@@ -37,4 +37,4 @@ parameters:
   batch_size: 
     value: 64
   covariance_type: 
-    values: [full]s
+    values: [full]

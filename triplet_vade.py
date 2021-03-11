@@ -293,7 +293,7 @@ pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.
 init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-acc=0.85.pkl"
 if __name__=='__main__':
     model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha=0, 
-    triplet_loss_alpha_kl=3.0, 
+    triplet_loss_alpha_kl=1.0, triplet_loss_margin_kl=300,
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
     logger = pl.loggers.WandbLogger(project='TripletVaDE')
     trainer = pl.Trainer(gpus=1, max_epochs=10, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback()])
