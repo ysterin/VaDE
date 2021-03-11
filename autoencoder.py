@@ -427,7 +427,9 @@ class VaDE(nn.Module):
         self.log("latent dist std", z_dist.stddev.mean())
         z = z_dist.rsample().squeeze(1)
         x_dist = self.out_dist(self.decoder(z))
-        x_recon_loss = - x_dist.log_prob(bx).sum(dim=-1)
+        #import pdb; pdb.set_trace()
+        #x_recon_loss = - x_dist.log_prob(bx).sum(dim=-1)
+        x_recon_loss = torch.binary_cross_entropy_with_logits(x_dist.logits, bx).sum(dim=-1)
         ###################################
         log_p_z_c = self.component_distribution.log_prob(z.unsqueeze(1))
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
