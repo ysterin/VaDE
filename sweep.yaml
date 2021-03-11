@@ -7,7 +7,9 @@ metric:
 parameters:
   pretrained_model_file:
     # value: pretrained_models/prime-night-30/autoencoder-epoch=29.ckpt
-    value: "wandb/run-20210223_135845-zcinx93k/files/AE clustering/zcinx93k/checkpoints/epoch=299-step=5999.ckpt"
+    value: "wandb/run-20210311_143836-y7fspaoh/files/AE-clustering/y7fspaoh/checkpoints/epoch=299-step=11999.ckpt"
+    #  gmm_init_file:
+    #   values: ["saved_gmm_init/y7fspaoh/gmm-full-acc=0.82.pkl", "saved_gmm_init/y7fspaoh/gmm-full-acc=0.75.pkl"]
   lr:
     min: 0.001
     max: 0.003
@@ -33,8 +35,8 @@ parameters:
   data_size:
     value: 10000
   n_samples_for_triplets: 
-    value: 1000
+    value: null 
   batch_size: 
-    value: 64
+    value: 256
   covariance_type: 
-    values: [full]s
+    values: [full]

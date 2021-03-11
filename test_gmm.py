@@ -13,15 +13,15 @@ from pathlib import Path
 
 def test_gmm(run_id, ds_type='train', n_runs=5, save=False):
 
-    wandb.init(project='AE clustering', resume='must', id=run_id, config=defaults)
+    wandb.init(project='AE-clustering', resume='must', id=run_id, config=defaults)
     autoencoder = SimpleAutoencoder(n_neurons=wandb.config.n_neurons, dataset=wandb.config.dataset, 
                                     data_size=wandb.config.data_size, data_random_state=wandb.config.data_random_state)
     autoencoder.prepare_data()
-    run_path = Path(f'AE clustering/{run_id}')
+    run_path = Path(f'AE-clustering/{run_id}')
     if not os.path.exists(run_path): 
         for path in Path('wandb').glob(f"run-*-{run_id}"):
-            if os.path.exists(path / 'files' / 'AE clustering'):
-                run_path = path / 'files' / 'AE clustering' / run_id 
+            if os.path.exists(path / 'files' / 'AE-clustering'):
+                run_path = path / 'files' / 'AE-clustering' / run_id 
                 break
 
     checkpoint_files = os.listdir(run_path /'checkpoints')
