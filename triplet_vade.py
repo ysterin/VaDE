@@ -231,11 +231,10 @@ class TripletVaDE(pl.LightningModule):
 
     def triplet_loss_kl(self, anchor_z_dist, pos_z_dist, neg_z_dist):
         d1, d2 = kl_distance(anchor_z_dist, pos_z_dist), kl_distance(anchor_z_dist, neg_z_dist)
-        
         results = {}
         results['anchor_pos_distance_kl'] = d1.mean()
         results['anchor_neg_distance_kl'] = d2.mean()
-        results['correct_triplet_pct_kl'] = (d1 < d2).float().mean()*100
+        results['correct_triplet_pct_kl'] = (d1 < d2).float().mean() * 100
         # self.log('anchor_pos_distance', d1.mean(), logger=True)
         # self.log('anchor_neg_distance', d2.mean(), logger=True)
         # self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
@@ -246,14 +245,14 @@ class TripletVaDE(pl.LightningModule):
     def shared_step(self, batch, batch_idx):
         bx, triplet_dict = batch
         result = self.model.shared_step(bx)
-        # triplet_batch = torch.stack([triplet_dict[s] for s in ['anchor', 'positive', 'negative']])
-        # triplet_encs = self.model.encoder(triplet_batch)
-        # triplet_dists = self.model.latent_dist(triplet_encs)
-        # triplet_dists = split_dist(triplet_dists, n=3)
-        triplet_dists = [
-            self.model.latent_dist(self.model.encoder(triplet_dict[s]))
-            for s in ['anchor', 'positive', 'negative']
-        ]
+        triplet_batch = torch.cat([triplet_dict[s] for s in ['anchor', 'positive', 'negative']])
+        triplet_encs = self.model.encoder(triplet_batch)
+        triplet_dists = self.model.latent_dist(triplet_encs)
+        triplet_dists = split_dist(triplet_dists, n=3)
+        # triplet_dists = [
+        #     self.model.latent_dist(self.model.encoder(triplet_dict[s]))
+        #     for s in ['anchor', 'positive', 'negative']
+        # ]
         result['main_loss'] = result['loss'].detach().clone()
         if self.hparams['triplet_loss_alpha'] > 0:
             result.update(self.triplet_loss(*triplet_dists))
@@ -291,10 +290,11 @@ class TripletVaDE(pl.LightningModule):
         return self.model.cluster_data(dl)
 
 pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
-init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-acc=0.95.pkl"
+init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-acc=0.85.pkl"
 if __name__=='__main__':
-    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha_kl=1.0,
+    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha=0, 
+    triplet_loss_alpha_kl=3.0, 
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
     logger = pl.loggers.WandbLogger(project='TripletVaDE')
-    trainer = pl.Trainer(gpus=1, max_epochs=20, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback()])
+    trainer = pl.Trainer(gpus=1, max_epochs=10, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback()])
     trainer.fit(model)
