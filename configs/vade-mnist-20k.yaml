@@ -33,7 +33,7 @@ epochs:
   value: 200
 pretrain_epochs:
   desc: number of epochs for pretraining
-  value: 100
+  value: 300
 data_size:
   desc: size of the data subset to use
   value: 20000

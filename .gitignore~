@@ -1,6 +1,5 @@
 testenv/
 vade/
-core.*
 .vscode/
 data/
 AE clustering/
