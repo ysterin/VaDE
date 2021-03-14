@@ -119,7 +119,7 @@ class LatentDistribution(nn.Module):
                 self.logvar_fc = nn.Linear(in_features, out_features)
                 self.logvar_fc.weight.data.zero_()
                 self.logvar_fc.bias.data.zero_()     
-                self.logvar_fc.bias.data -= 5.0
+               # self.logvar_fc.bias.data -= 5.0
     
     def forward(self, x):
         mu = self.mu_fc(x)
@@ -338,7 +338,7 @@ class SimpleAutoencoder(pl.LightningModule):
 
 class VaDE(nn.Module):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, dropout=0., activation='relu', k=10, 
-                 lr=1e-3, device='cuda', rank=3,
+                 lr=1e-3, device='cuda', rank=3, latent_logvar_bias_init=-5.,
                  pretrain_model=None, init_gmm=None, logger=None, covariance_type='diag', multivariate_latent=False):
         super(VaDE, self).__init__()
         self.k = k
@@ -365,6 +365,7 @@ class VaDE(nn.Module):
         else:
             self.latent_dist = LatentDistribution(n_neurons[-2], n_neurons[-1])
         self.latent_dist.mu_fc.register_forward_hook(self.register_stats(f"latent mu"))
+        self.latent_dist.logvar_fc.bias.data += latent_logvar_bias_init
         self.decoder = decoder[:-1]
         self.out_dist = BernoulliDistribution(n_neurons[1], n_neurons[0])
         self.model_params = list(self.encoder.parameters()) + list(self.latent_dist.parameters()) + list(self.decoder.parameters()) + list(self.out_dist.parameters())

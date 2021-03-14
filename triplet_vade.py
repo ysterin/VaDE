@@ -129,6 +129,7 @@ class TripletVaDE(pl.LightningModule):
                  init_gmm_file=None,
                  covariance_type='diag',
                  data_size=None,
+                 latent_logvar_bias_init=0.,
                  triplet_loss_margin=0.5,
                  triplet_loss_alpha=1.,
                  triplet_loss_margin_kl=20, 
@@ -144,6 +145,7 @@ class TripletVaDE(pl.LightningModule):
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
         pretrain_model, init_gmm = self.init_params()
         self.model = VaDE(n_neurons=n_neurons, k=k, device=device, covariance_type=covariance_type,
+                          latent_logvar_bias_init=latent_logvar_bias_init,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
         lr_gmm = ifnone(lr_gmm, lr)
 
@@ -215,10 +217,17 @@ class TripletVaDE(pl.LightningModule):
 
     def triplet_loss(self, anchor_z_dist, pos_z_dist, neg_z_dist):
         anchor_z, pos_z, neg_z = anchor_z_dist.mean.squeeze(1), pos_z_dist.mean.squeeze(1), neg_z_dist.mean.squeeze(1)
-        anchor_z, pos_z, neg_z = map(lambda t: t / t.norm(dim=1, keepdim=True), [anchor_z, pos_z, neg_z])
+   
         d1, d2 = torch.linalg.norm(anchor_z - pos_z, dim=1), torch.linalg.norm(anchor_z - neg_z, dim=1)
         assert len(anchor_z.shape) == 2
         results = {}
+        results['anchor_pos_distance_no_norm'] = d1.mean()
+        results['anchor_neg_distance_no_norm'] = d2.mean()
+        results['correct_triplet_pct_no_norm'] = (d1 < d2).float().mean()*100
+        anchor_z, pos_z, neg_z = map(lambda t: t / t.norm(dim=1, keepdim=True), [anchor_z, pos_z, neg_z])
+        d1, d2 = torch.linalg.norm(anchor_z - pos_z, dim=1), torch.linalg.norm(anchor_z - neg_z, dim=1)
+        assert len(anchor_z.shape) == 2
+        #results = {}
         results['anchor_pos_distance'] = d1.mean()
         results['anchor_neg_distance'] = d2.mean()
         results['correct_triplet_pct'] = (d1 < d2).float().mean()*100

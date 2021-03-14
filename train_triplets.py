@@ -16,7 +16,8 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'batch_size': 256, 
             'batch_norm': False,
             'device': 'cuda',
-            'pretrain_epochs': 50, 
+            'pretrain_epochs': 50,
+            'latent_logvar_bias_init': 0.,
             'triplet_loss_margin': 0.5, 
             'triplet_loss_alpha': 0.0, 
             'warmup_epochs':10, 
@@ -43,6 +44,7 @@ def main():
                                  lr_gmm=config.lr_gmm,
                                  dataset=config.dataset,
                                  batch_size=config.batch_size,
+                                 latent_logvar_bias_init=config.latent_logvar_bias_init,
                                  pretrain_epochs=config.pretrain_epochs, 
                                  pretrained_model_file=config.pretrained_model_file,
                                  init_gmm_file=config.init_gmm_file,
@@ -55,7 +57,7 @@ def main():
                                  covariance_type=config.covariance_type)
 
     logger = pl.loggers.WandbLogger()
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=1, 
                          callbacks=[ClusteringEvaluationCallback(), ClusteringEvaluationCallback(ds_type='train'), ClusteringEvaluationCallback(ds_type='valid')], max_epochs=config.epochs)
 
     trainer.fit(triplets_model)
