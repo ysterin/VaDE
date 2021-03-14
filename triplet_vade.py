@@ -36,6 +36,16 @@ def cross_entropy(P, Q):
 def kl_distance(P, Q):
     return 0.5 * (kl_divergence(P, Q) + kl_divergence(Q, P))
 
+def kl_div(p, q):
+    log_diff = p.log() - q.log()
+    return (p * log_diff).sum(dim=1)
+
+def js_dist(p, q, eps=1e-8):
+    p, q = (p + eps), (q + eps)
+    p, q = p / p.sum(dim=1, keepdims=True), q / q.sum(dim=1, keepdims=True)
+    m = (p + q) / 2
+    return (kl_div(p, m) + kl_div(q, m)) / 2
+
 def split_dist(dist, n=3):
     bs = dist.mean.shape[0] // n
     if isinstance(dist, D.Independent):
@@ -133,6 +143,8 @@ class TripletVaDE(pl.LightningModule):
                  triplet_loss_alpha=1.,
                  triplet_loss_margin_kl=20, 
                  triplet_loss_alpha_kl=0.,
+                 triplet_loss_alpha_cls=0., 
+                 triplet_loss_margin_cls=0.2,
                  warmup_epochs=10,
                  n_samples_for_triplets=1000,
                  n_triplets=None):
@@ -235,20 +247,32 @@ class TripletVaDE(pl.LightningModule):
         results['anchor_pos_distance_kl'] = d1.mean()
         results['anchor_neg_distance_kl'] = d2.mean()
         results['correct_triplet_pct_kl'] = (d1 < d2).float().mean() * 100
-        # self.log('anchor_pos_distance', d1.mean(), logger=True)
-        # self.log('anchor_neg_distance', d2.mean(), logger=True)
-        # self.log('correct_triplet_pct', (d1 < d2).float().mean()*100)
         loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_kl']).mean()
         results['triplet_loss_kl'] = loss
+        return results
+
+    def triplet_loss_cls(self, anchor_logits, pos_logits, neg_logits):
+        d1 = js_dist(anchor_logits.softmax(1), pos_logits.softmax(1))
+        d2 = js_dist(anchor_logits.softmax(1), neg_logits.softmax(1))
+        assert len(d1.shape) == 1
+        results = {}
+        results['anchor_pos_distance_cls'] = d1.mean()
+        results['anchor_neg_distance_cls'] = d2.mean()
+        results['correct_triplet_pct_cls'] = (d1 < d2).float().mean() * 100
+        loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_cls']).mean()
+        results['triplet_loss_cls'] = loss
         return results
     
     def shared_step(self, batch, batch_idx):
         bx, triplet_dict = batch
+        bs, *_ = bx.shape
         result = self.model.shared_step(bx)
         triplet_batch = torch.cat([triplet_dict[s] for s in ['anchor', 'positive', 'negative']])
-        triplet_encs = self.model.encoder(triplet_batch)
-        triplet_dists = self.model.latent_dist(triplet_encs)
+        # triplet_encs = self.model.encoder(triplet_batch)
+        # triplet_dists = self.model.latent_dist(triplet_encs)
+        triplet_dists, logits = self.model.z_dist_and_classification_logits(triplet_batch)
         triplet_dists = split_dist(triplet_dists, n=3)
+        logits = torch.split(logits, bs)
         # triplet_dists = [
         #     self.model.latent_dist(self.model.encoder(triplet_dict[s]))
         #     for s in ['anchor', 'positive', 'negative']
@@ -261,6 +285,9 @@ class TripletVaDE(pl.LightningModule):
         if self.hparams['triplet_loss_alpha_kl'] > 0:
             result.update(self.triplet_loss_kl(*triplet_dists))
             result['loss'] += self.hparams['triplet_loss_alpha_kl'] * result['triplet_loss_kl']
+        if self.hparams['triplet_loss_alpha_cls'] > 0:
+            result.update(self.triplet_loss_cls(*logits))
+            result['loss'] += self.hparams['triplet_loss_alpha_cls'] * result['triplet_loss_cls']
         return result
 
     def validation_step(self, batch, batch_idx):
@@ -292,9 +319,9 @@ class TripletVaDE(pl.LightningModule):
 pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
 init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-acc=0.85.pkl"
 if __name__=='__main__':
-    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha=0, 
-    triplet_loss_alpha_kl=1.0, triplet_loss_margin_kl=300,
+    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha=0.01, 
+    triplet_loss_alpha_kl=0.0, triplet_loss_margin_kl=300, triplet_loss_alpha_cls=100, triplet_loss_margin_cls=0.3,
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
     logger = pl.loggers.WandbLogger(project='TripletVaDE')
-    trainer = pl.Trainer(gpus=1, max_epochs=10, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback()])
+    trainer = pl.Trainer(gpus=1, max_epochs=50, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback(ds_type='valid')])
     trainer.fit(model)

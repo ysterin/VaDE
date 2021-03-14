@@ -26,7 +26,7 @@ from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
 import ray
 
-ray.init()
+# ray.init()
 
 def best_of_n_gmm(x, n_clusters=10, n=10, covariance_type='full', n_init=1):
     scores_dict = {}

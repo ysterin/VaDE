@@ -411,7 +411,16 @@ class VaDE(nn.Module):
         z = z_dist.rsample()
         log_p_z_c = self.component_distribution.log_prob(z)
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
-        
+        return log_q_c_z
+
+    # returns logits of the ptobability of x to belong to each cluster
+    def z_dist_and_classification_logits(self, bx):
+        z_dist = self.encode(bx)
+        z = z_dist.rsample()
+        log_p_z_c = self.component_distribution.log_prob(z)
+        log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
+        return z_dist, log_q_c_z
+   
 
     # @property
     def _component_distribution(self):
