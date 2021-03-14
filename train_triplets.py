@@ -23,6 +23,8 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
             'warmup_epochs':10, 
             'triplet_loss_margin_kl': 20,
             'triplet_loss_alpha_kl': 1., 
+            'triplet_loss_margin_cls': 0.5,
+            'triplet_loss_alpha_cls': 200, 
             'n_samples_for_triplets': None, 
             'data_size': None, 
             'dataset': 'mnist',
@@ -53,6 +55,8 @@ def main():
                                  triplet_loss_alpha=config.triplet_loss_alpha,
                                  triplet_loss_margin_kl=config.triplet_loss_margin_kl,
                                  triplet_loss_alpha_kl=config.triplet_loss_alpha_kl,
+                                 triplet_loss_margin_cls=config.triplet_loss_margin_cls,
+                                 triplet_loss_alpha_cls=config.triplet_loss_alpha_cls,
                                  warmup_epochs=config.warmup_epochs,
                                  covariance_type=config.covariance_type)
 
