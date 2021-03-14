@@ -11,7 +11,7 @@ import sys
 import wandb
 from pathlib import Path
 
-def test_gmm(run_id, ds_type='train', n_runs=5, save=False):
+def test_gmm(run_id, ds_type='train', n_runs=5, save=False, cov_type='full'):
 
     wandb.init(project='AE-clustering', resume='must', id=run_id, config=defaults)
     autoencoder = SimpleAutoencoder(n_neurons=wandb.config.n_neurons, dataset=wandb.config.dataset, 
@@ -31,7 +31,7 @@ def test_gmm(run_id, ds_type='train', n_runs=5, save=False):
     y_true = np.stack([autoencoder.all_ds[i][1] for i in range(len(autoencoder.all_ds))])
     X_encoded = autoencoder.encode_ds(autoencoder.all_ds)
     for i in range(n_runs):
-        init_gmm = GaussianMixture(10, covariance_type='full', n_init=3)
+        init_gmm = GaussianMixture(10, covariance_type=cov_type, n_init=3)
         y_pred = init_gmm.fit_predict(X_encoded)
         acc = cluster_acc(y_true, y_pred)
         nmi = metrics.normalized_mutual_info_score(y_true, y_pred)
@@ -42,7 +42,7 @@ def test_gmm(run_id, ds_type='train', n_runs=5, save=False):
         print('ARI: ', ari)
         os.makedirs(f'saved_gmm_init/{run_id}', exist_ok=True)
         if save:
-            with open(f'saved_gmm_init/{run_id}/gmm-full-acc={acc:.2f}.pkl', 'wb') as file:
+            with open(f'saved_gmm_init/{run_id}/gmm-{cov_type}-acc={acc:.2f}.pkl', 'wb') as file:
                 pickle.dump(init_gmm, file)
 
 parser = argparse.ArgumentParser()
@@ -51,14 +51,14 @@ parser.add_argument('--num', type=int, default=5)
 parser.add_argument('--checkpoint_file', type=str, required=False, nargs=1)
 parser.add_argument('--ds_type', type=str, choices=['train', 'valid', 'all'], default='all')
 parser.add_argument('--save', action='store_true')
-
+parser.add_argument('--covariance_type', type=str, choices=['full', 'diag'], default='full')
 defaults = {'dataset': 'mnist', 'data_size': None, 'data_random_state': 42}
 
 if __name__ == '__main__':
     args = parser.parse_args(sys.argv[1:])
     # run_id = args.run_id
     print(args) 
-    test_gmm(args.run_id, args.ds_type, args.num, args.save)
+    test_gmm(args.run_id, args.ds_type, args.num, args.save, args.covariance_type)
     # wandb.init(project='AE clustering', resume='must', id=run_id, config=defaults)
     # autoencoder = SimpleAutoencoder(n_neurons=wandb.config.n_neurons, dataset=wandb.config.dataset, 
     #                                 data_size=wandb.config.data_size, data_random_state=wandb.config.data_random_state)
