@@ -13,9 +13,10 @@ from pathlib import Path
 
 def test_gmm(run_id, ds_type='train', n_runs=5, save=False, cov_type='full'):
 
-    wandb.init(project='AE-clustering', resume='must', id=run_id, config=defaults)
+    wandb.init(project='AE-clustering', resume='must', id=run_id)
     autoencoder = SimpleAutoencoder(n_neurons=wandb.config.n_neurons, dataset=wandb.config.dataset, 
                                     data_size=wandb.config.data_size, data_random_state=wandb.config.data_random_state)
+    print(wandb.config.dataset)
     autoencoder.prepare_data()
     run_path = Path(f'AE-clustering/{run_id}')
     if not os.path.exists(run_path): 
@@ -52,7 +53,7 @@ parser.add_argument('--checkpoint_file', type=str, required=False, nargs=1)
 parser.add_argument('--ds_type', type=str, choices=['train', 'valid', 'all'], default='all')
 parser.add_argument('--save', action='store_true')
 parser.add_argument('--covariance_type', type=str, choices=['full', 'diag'], default='full')
-defaults = {'dataset': 'mnist', 'data_size': None, 'data_random_state': 42}
+#defaults = {'dataset': 'mnist', 'data_size': None, 'data_random_state': 42}
 
 if __name__ == '__main__':
     args = parser.parse_args(sys.argv[1:])

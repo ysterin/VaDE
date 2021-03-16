@@ -145,7 +145,9 @@ class TripletVaDE(pl.LightningModule):
                  init_gmm_file=None,
                  covariance_type='diag',
                  data_size=None,
+                 weight_decay=0.0,
                  latent_logvar_bias_init=0.,
+                 autoencoder_loss_alpha=1.0,
                  triplet_loss_margin=0.5,
                  triplet_loss_alpha=1.,
                  triplet_loss_margin_kl=20, 
@@ -186,7 +188,7 @@ class TripletVaDE(pl.LightningModule):
             # self.train_ds, self.valid_ds = map(to_subset, [self.train_ds, self.valid_ds])
             self.train_ds = to_subset(self.train_ds)
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
-        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'])
+        self.train_triplet_ds = CombinedDataset(self.train_ds, data_size=self.hparams['n_samples_for_triplets'], max_triplets=self.hparams['n_triplets'])
         self.valid_triplet_ds = CombinedDataset(self.valid_ds, data_size=self.hparams['n_samples_for_triplets']) 
             
     def pretrain_model(self):
@@ -231,9 +233,9 @@ class TripletVaDE(pl.LightningModule):
     def configure_optimizers(self):
         opt = torch.optim.AdamW([{'params': self.model.model_params},
                                  {'params': self.model.gmm_params, 'lr': self.hparams['lr_gmm']}], 
-                                self.hparams['lr'], weight_decay=0.00)
+                                self.hparams['lr'], weight_decay=self.hparams['weight_decay'])
         # sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch: (epoch+1)/10 if epoch < 10 else 0.95**(epoch//10))
-        lr_rate_function = lambda epoch: min((epoch+1)/self.hparams['warmup_epochs'], 0.9**(epoch//10))
+        lr_rate_function = lambda epoch: max(min((epoch+1)/self.hparams['warmup_epochs'], 0.9**(epoch//10)), 3e-2)
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_rate_function)
         return [opt], [sched]
 
@@ -310,6 +312,7 @@ class TripletVaDE(pl.LightningModule):
         #     for s in ['anchor', 'positive', 'negative']
         # ]
         result['main_loss'] = result['loss'].detach().clone()
+        result['loss'] *= self.hparams['autoencoder_loss_alpha']
         if self.hparams['triplet_loss_alpha'] > 0:
             result.update(self.triplet_loss(*triplet_dists))
             result['loss'] += self.hparams['triplet_loss_alpha'] * result['triplet_loss']
@@ -352,12 +355,12 @@ class TripletVaDE(pl.LightningModule):
                 raise Exception("Incorrect ds_type (can be one of 'train', 'valid', 'all')")
         return self.model.cluster_data(dl)
 
+
 pretrained_model_file = "AE clustering/5wn5ybl3/checkpoints/epoch=69-step=16449.ckpt"
 init_gmm_file = "saved_gmm_init/5wn5ybl3/gmm-full-acc=0.85.pkl"
 if __name__=='__main__':
-    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha=0.01, 
-    triplet_loss_alpha_kl=0.0, triplet_loss_margin_kl=300, triplet_loss_alpha_cls=0.0, triplet_loss_margin_cls=0.3,
-    triplet_loss_alpha_sim=2000.0,
+    model = TripletVaDE(n_neurons=[784, 512, 512, 2048, 10], pretrain_epochs=20, lr=2e-3, triplet_loss_alpha=0.01, autoencoder_loss_alpha=0., 
+    triplet_loss_alpha_kl=0.0, triplet_loss_margin_kl=300, triplet_loss_alpha_cls=100, triplet_loss_margin_cls=0.3,
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
     logger = pl.loggers.WandbLogger(project='TripletVaDE')
     trainer = pl.Trainer(gpus=1, max_epochs=20, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback(ds_type='valid')])

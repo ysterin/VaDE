@@ -1,0 +1,63 @@
+layer1:
+  desc: number of neurons in layer 1
+  value: 500
+layer2:
+  desc: number of neurons in layer 2
+  value: 500
+layer3:
+  desc: number of neurons in layer 3
+  value: 2000
+hid_dim:
+  desc: number of neurons in layer 4
+  value: 10
+dropout: 
+  desc: dropout rate
+  value: 0 
+activation:
+  desc: activation function used 
+  value: relu
+lr:
+  desc: learning rate used
+  value: 0.002
+pretrain_lr: 
+  desc: pretraining learning rate
+  value: 0.0003
+batch_size:
+  desc: batch size
+  value: 256
+batch_norm:
+  desc: whether to use batch normalization
+  value: false
+epochs:
+  desc: number of epochs
+  value: 20
+pretrain_epochs:
+  desc: number of epochs for pretraining
+  value: 30
+data_size:
+  desc: size of the data subset to use
+  value: null
+dataset:
+  desc: dataset to use - mnist or fmnist
+  value: mnist
+init_gmm_file:
+  desc: file with saved GaussianMixture model to use for initialization
+  value: null
+pretrained_model_file:
+  desc: file of saved pretrained Autoencoder for initialization
+  value: null
+multivariate_latent:
+  desc: if true, use LowRankMultivariateNormal as the posterior distribution in the latent space
+  value: false
+rank:  
+  desc: rank of LowRankMultivariateNormal distribution used (if used)
+  value: null
+covariance_type:
+  desc: covariance type of Gaussians in the Gaussian Mixture model
+  value: full
+device: 
+  desc: device to use - cuda (for gpu) or cpu
+  value: cuda
+seed: 
+  desc: seed to use for random numbers
+  value: 42

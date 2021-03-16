@@ -32,43 +32,47 @@ from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, c
 #             'epochs':300,
 #             'seed': 42}
 
+def run_with_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    wandb.init(project='VADE')
+    config = wandb.config
+    wandb.config.update({'seed': seed}, allow_val_change=True)
+    model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
+                    dropout=config.dropout,
+                    activation=config.activation,
+                    lr=config.lr,
+                    pretrain_lr=config.pretrain_lr,
+                    data_size=config.data_size,
+                    dataset=config.dataset,
+                    batch_size=config.batch_size,
+                    pretrain_epochs=config.pretrain_epochs, 
+                    pretrained_model_file=config.pretrained_model_file,
+                    device=config.device,
+                    covariance_type=config.covariance_type,
+                    init_gmm_file=config.init_gmm_file,
+                    multivariate_latent=config.multivariate_latent,
+                    rank=config.rank)
+
+    logger = pl.loggers.WandbLogger(project='VADE')
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, log_every_n_steps=1,
+                         callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
+
+    trainer.fit(model)
+    wandb.join()
+
+
 SEED = 42
-N_RUNS = 10
+N_RUNS = 3 
 
 def main():
+    ray.init(ignore_reinit_error=True)
     seed_sequence = np.random.SeedSequence(SEED)
     streams = [np.random.default_rng(ss) for ss in seed_sequence.spawn(N_RUNS)]
     for i in range(N_RUNS):
         seed = int.from_bytes(streams[i].bytes(4), 'big')
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        ray.init(ignore_reinit_error=True)
-        wandb.init(project='VADE')
-        config = wandb.config
-        wandb.config.update({'seed': seed}, allow_val_change=True)
-        model = PLVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
-                        dropout=config.dropout,
-                        activation=config.activation,
-                        lr=config.lr,
-                        pretrain_lr=config.pretrain_lr,
-                        data_size=config.data_size,
-                        dataset=config.dataset,
-                        batch_size=config.batch_size,
-                        pretrain_epochs=config.pretrain_epochs, 
-                        pretrained_model_file=config.pretrained_model_file,
-                        device=config.device,
-                        covariance_type=config.covariance_type,
-                        init_gmm_file=config.init_gmm_file,
-                        multivariate_latent=config.multivariate_latent,
-                        rank=config.rank)
-
-        logger = pl.loggers.WandbLogger(project='VADE')
-        trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, log_every_n_steps=1,
-                             callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
-
-        trainer.fit(model)
-        wandb.join()
-        ray.shutdown()
+        run_with_seed(seed)
+    ray.shutdown()
 
 
 if __name__ == '__main__':

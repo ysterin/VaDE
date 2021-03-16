@@ -7,9 +7,10 @@ import wandb
 # from triplet_vade import TripletVaDE
 from triplet_vade import TripletVaDE
 from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
+import ray
 
-pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
-
+#pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
+#
 #defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
 #            'lr': 2e-3, 
 #            'lr_gmm': 2e-3, 
@@ -30,16 +31,19 @@ pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss
 #            'n_samples_for_triplets': None, 
 #            'data_size': None, 
 #            'dataset': 'mnist',
+#            'seed': 42,
 #            'n_samples_for_triplets': None,
 #            'pretrained_model_file': None, 
 #            'init_gmm_file': None,
 #            'covariance_type': 'full', 
 #            'epochs':50}
-#
-wandb.init(config=defaults, project='VaDE Triplets')
-config = wandb.config
 
-def main():
+def train_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    wandb.init(project='VaDE Triplets')
+    config = wandb.config
+    wandb.config.update({'seed': seed}, allow_val_change=True)
     triplets_model = TripletVaDE(n_neurons=[784, config.layer1, config.layer2, config.layer3, config.hid_dim], 
                                  batch_norm=config.batch_norm,
                                  data_size=config.data_size,
@@ -65,11 +69,27 @@ def main():
                                  warmup_epochs=config.warmup_epochs,
                                  covariance_type=config.covariance_type)
 
-    logger = pl.loggers.WandbLogger()
+    logger = pl.loggers.WandbLogger(project='VaDE Triplets')
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=1, 
-                         callbacks=[ClusteringEvaluationCallback(), ClusteringEvaluationCallback(ds_type='train'), ClusteringEvaluationCallback(ds_type='valid')], max_epochs=config.epochs)
+                         callbacks=[ClusteringEvaluationCallback()], max_epochs=config.epochs)
 
     trainer.fit(triplets_model)
+    wandb.join()
+
+N_RUNS = 10
+SEED = 42
+def main(n_runs=N_RUNS):
+    ray.init(ignore_reinit_error=True)
+    seed_sequence = np.random.SeedSequence(SEED)
+    streams = [np.random.default_rng(ss) for ss in seed_sequence.spawn(n_runs)]
+    for i in range(n_runs):
+        seed = int.from_bytes(streams[i].bytes(4), 'big')
+        train_seed(seed)
+    ray.shutdown()
+
+    
+    
+
 
 
 if __name__ == '__main__':
