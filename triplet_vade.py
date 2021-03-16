@@ -17,8 +17,9 @@ from sklearn.mixture import GaussianMixture
 from sklearn import metrics
 from torch import autograd
 from torch.utils.data import ConcatDataset
-from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
-from pl_modules import best_of_n_gmm_ray
+from autoencoder import SimpleAutoencoder, VaDE
+from callbacks import ClusteringEvaluationCallback, cluster_acc
+from utils import best_of_n_gmm_ray
 from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
 import ray

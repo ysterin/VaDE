@@ -6,36 +6,37 @@ import numpy as np
 import wandb
 # from triplet_vade import TripletVaDE
 from triplet_vade import TripletVaDE
-from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
+from autoencoder import SimpleAutoencoder, VaDE
+from callbacks import ClusteringEvaluationCallback, cluster_acc
 
 pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
-#defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
-#            'lr': 2e-3, 
-#            'lr_gmm': 2e-3, 
-#            'batch_size': 256, 
-#            'batch_norm': False,
-#            'weight_decay': 0.0,
-#            'device': 'cuda',
-#            'pretrain_epochs': 50,
-#            'latent_logvar_bias_init': 0.,
-#            'autoencoder_loss_alpha': 1.0,
-#            'triplet_loss_margin': 0.5, 
-#            'triplet_loss_alpha': 0.0, 
-#            'warmup_epochs':10, 
-#            'triplet_loss_margin_kl': 20,
-#            'triplet_loss_alpha_kl': 0., 
-#            'triplet_loss_margin_cls': 0.5,
-#            'triplet_loss_alpha_cls': 0, 
-#            'n_samples_for_triplets': None, 
-#            'data_size': None, 
-#            'dataset': 'mnist',
-#            'n_samples_for_triplets': None,
-#            'pretrained_model_file': None, 
-#            'init_gmm_file': None,
-#            'covariance_type': 'full', 
-#            'epochs':50}
-#
+defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
+           'lr': 2e-3, 
+           'lr_gmm': 2e-3, 
+           'batch_size': 256, 
+           'batch_norm': False,
+           'weight_decay': 0.0,
+           'device': 'cuda',
+           'pretrain_epochs': 50,
+           'latent_logvar_bias_init': 0.,
+           'autoencoder_loss_alpha': 1.0,
+           'triplet_loss_margin': 0.5, 
+           'triplet_loss_alpha': 0.0, 
+           'warmup_epochs':10, 
+           'triplet_loss_margin_kl': 20,
+           'triplet_loss_alpha_kl': 0., 
+           'triplet_loss_margin_cls': 0.5,
+           'triplet_loss_alpha_cls': 0, 
+           'n_samples_for_triplets': None, 
+           'data_size': None, 
+           'dataset': 'mnist',
+           'n_samples_for_triplets': None,
+           'pretrained_model_file': None, 
+           'init_gmm_file': None,
+           'covariance_type': 'full', 
+           'epochs':50}
+
 wandb.init(config=defaults, project='VaDE Triplets')
 config = wandb.config
 
