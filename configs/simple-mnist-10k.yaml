@@ -1,0 +1,20 @@
+program: train_simple.py
+method: random
+metric:
+  goal: maximize
+  name: ACC
+parameters:
+  covariance_type:
+    value: full
+  lr:
+    max: 0.0004
+    min: 0.0003
+    distribution: uniform
+  batch_size:
+    value: 256
+  device:
+    values:
+      - cuda
+    distribution: categorical
+  k:
+    value: 10

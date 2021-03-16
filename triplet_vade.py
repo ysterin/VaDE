@@ -17,10 +17,12 @@ from sklearn.mixture import GaussianMixture
 from sklearn import metrics
 from torch import autograd
 from torch.utils.data import ConcatDataset
-from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
+from autoencoder import SimpleAutoencoder, VaDE
+from callbacks import ClusteringEvaluationCallback, cluster_acc
+from utils import best_of_n_gmm_ray
 from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
-
+import ray
 
 def normal_to_multivariate(p):
     return D.MultivariateNormal(p.mean, scale_tril=torch.diag_embed(p.stddev))
@@ -45,6 +47,11 @@ def js_dist(p, q, eps=1e-8):
     p, q = p / p.sum(dim=1, keepdims=True), q / q.sum(dim=1, keepdims=True)
     m = (p + q) / 2
     return (kl_div(p, m) + kl_div(q, m)) / 2
+
+def similarity(logits1, logits2):
+    p = logits1.softmax(dim=1)
+    q = logits2.softmax(dim=1)
+    return torch.einsum('bi,bi->b', p, q)
 
 def split_dist(dist, n=3):
     bs = dist.mean.shape[0] // n
@@ -148,6 +155,7 @@ class TripletVaDE(pl.LightningModule):
                  triplet_loss_alpha_kl=0.,
                  triplet_loss_alpha_cls=0., 
                  triplet_loss_margin_cls=0.2,
+                 triplet_loss_alpha_sim=0.,
                  warmup_epochs=10,
                  n_samples_for_triplets=1000,
                  n_triplets=None):
@@ -207,11 +215,14 @@ class TripletVaDE(pl.LightningModule):
             self.prepare_data()
         if not self.hparams['init_gmm_file']:
             X_encoded = pretrained_model.encode_ds(self.all_ds)
-            init_gmm = GaussianMixture(self.hparams['k'], covariance_type=self.hparams['covariance_type'], n_init=3)
-            init_gmm.fit(X_encoded)
+            # init_gmm = GaussianMixture(self.hparams['k'], covariance_type=self.hparams['covariance_type'], n_init=3)
+            # init_gmm.fit(X_encoded)
+            ray.init(ignore_reinit_error=True)
+            init_gmm = best_of_n_gmm_ray(X_encoded, self.hparams['k'], covariance_type=self.hparams['covariance_type'], n=10, n_init=3)
         else:
             with open(self.hparams['init_gmm_file'], 'rb') as file:
                 init_gmm = pickle.load(file)
+        
         return pretrained_model, init_gmm
         
     def train_dataloader(self):
@@ -273,6 +284,19 @@ class TripletVaDE(pl.LightningModule):
         loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_cls']).mean()
         results['triplet_loss_cls'] = loss
         return results
+
+    def triplet_loss_sim(self, anchor_logits, pos_logits, neg_logits):
+        sim1 = similarity(anchor_logits, pos_logits)
+        sim2 = similarity(anchor_logits, neg_logits)
+        assert len(sim1.shape) == 1
+        results = {}
+        results['anchor_pos_similarity'] = sim1.mean()
+        results['anchor_neg_similarity'] = sim2.mean()
+        results['correct_triplet_pct_sim'] = (sim1 > sim2).float().mean() * 100
+        loss = - (sim1 / (sim1 + sim2)).log().mean()
+        # loss = torch.relu(d1 - d2 + self.hparams['triplet_loss_margin_cls']).mean()
+        results['triplet_loss_sim'] = loss
+        return results
     
     def shared_step(self, batch, batch_idx):
         bx, triplet_dict = batch
@@ -300,6 +324,10 @@ class TripletVaDE(pl.LightningModule):
         if self.hparams['triplet_loss_alpha_cls'] > 0:
             result.update(self.triplet_loss_cls(*logits))
             result['loss'] += self.hparams['triplet_loss_alpha_cls'] * result['triplet_loss_cls']
+        if self.hparams['triplet_loss_alpha_sim'] > 0:
+            result.update(self.triplet_loss_sim(*logits))
+            # import pdb; pdb.set_trace()
+            result['loss'] += self.hparams['triplet_loss_alpha_sim'] * result['triplet_loss_sim']
         return result
 
     def validation_step(self, batch, batch_idx):
@@ -336,5 +364,5 @@ if __name__=='__main__':
     triplet_loss_alpha_kl=0.0, triplet_loss_margin_kl=300, triplet_loss_alpha_cls=100, triplet_loss_margin_cls=0.3,
      pretrained_model_file=pretrained_model_file, init_gmm_file=init_gmm_file, covariance_type='full')
     logger = pl.loggers.WandbLogger(project='TripletVaDE')
-    trainer = pl.Trainer(gpus=1, max_epochs=50, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback(ds_type='valid')])
+    trainer = pl.Trainer(gpus=1, max_epochs=20, logger=logger, progress_bar_refresh_rate=10, callbacks=[ClusteringEvaluationCallback(ds_type='valid')])
     trainer.fit(model)

@@ -19,7 +19,9 @@ from sklearn import metrics
 from torch import autograd
 from pytorch_lightning.callbacks import Callback
 from scipy.optimize import linear_sum_assignment as linear_assignment
-
+from data_modules import BasicDataModule, MNISTDataModule
+import ray
+from utils import best_of_n_gmm_ray
 from six.moves import urllib    
 opener = urllib.request.build_opener()
 opener.addheaders = [('User-agent', 'Mozilla/5.0')]
@@ -30,64 +32,70 @@ transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.Lambda(lambda x: torch.flatten(x))])
 
 
-def cluster_acc(Y_pred, Y):
-    # from sklearn.utils. import linear_assignment
-    assert Y_pred.shape == Y.shape
-    D = max(Y_pred.max(), Y.max())+1
-    w = np.zeros((D,D), dtype=np.int64)
-    for i in range(Y_pred.size):
-        w[Y_pred[i], Y[i]] += 1
-    ind = linear_assignment(w.max() - w)
-    return sum([w[i,j] for i,j in zip(*ind)])*1.0 / Y_pred.size
+# def cluster_acc(Y_pred, Y):
+#     # from sklearn.utils. import linear_assignment
+#     assert Y_pred.shape == Y.shape
+#     D = max(Y_pred.max(), Y.max())+1
+#     w = np.zeros((D,D), dtype=np.int64)
+#     for i in range(Y_pred.size):
+#         w[Y_pred[i], Y[i]] += 1
+#     ind = linear_assignment(w.max() - w)
+#     return sum([w[i,j] for i,j in zip(*ind)])*1.0 / Y_pred.size
 
-def clustering_accuracy(gt, cluster_assignments):
-    mat = metrics.confusion_matrix(cluster_assignments, gt, labels=np.arange(max(max(gt), max(cluster_assignments)) + 1))
-    cluster_assignments = mat.argmax(axis=1)[cluster_assignments]
-    return metrics.accuracy_score(gt, cluster_assignments)
-
-
-class ClusteringEvaluationCallback(pl.callbacks.Callback):
-    def __init__(self, on_start=True, **kwargs):
-        super(ClusteringEvaluationCallback, self).__init__()
-        self.on_start = on_start
-        self.idx = -1
-        self.kwargs = kwargs
-        if 'ds_type' not in self.kwargs:
-            self.kwargs['ds_type'] = 'all'
-
-    def evaluate_clustering(self, trainer, pl_module):
-        if trainer.datamodule is not None:
-            if self.kwargs['ds_type'] == 'train':
-                ds = trainer.datamodule.train_ds
-            elif self.kwargs['ds_type'] == 'valid':
-                ds = trainer.datamodule.valid_ds
-            elif self.kwargs['ds_type'] == 'all':
-                ds = trainer.datamodule.all_ds 
-            else:
-                raise Exception(f"ds_type can be only 'train', 'valid', 'all'")
-            dl = DataLoader(ds, batch_size=1024, shuffle=False)
-            gt, labels, _ = pl_module.cluster_data(dl=dl, **self.kwargs)
-        else:
-            gt, labels, _ = pl_module.cluster_data(**self.kwargs)
-        nmi, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(gt, labels)
-        acc = cluster_acc(labels, gt)
-        ari = metrics.adjusted_rand_score(labels, gt)
-        prefix = self.kwargs['ds_type'] + '_'
-        if self.kwargs['ds_type'] == 'all':
-            prefix = ''
-        pl_module.log(prefix + 'NMI', nmi, on_epoch=True)
-        pl_module.log(prefix + 'ACC', acc, on_epoch=True)
-        pl_module.log(prefix + 'ACC2', acc2, on_epoch=True)
-        pl_module.log(prefix + 'ARI', ari, on_epoch=True)
+# def clustering_accuracy(gt, cluster_assignments):
+#     mat = metrics.confusion_matrix(cluster_assignments, gt, labels=np.arange(max(max(gt), max(cluster_assignments)) + 1))
+#     cluster_assignments = mat.argmax(axis=1)[cluster_assignments]
+#     return metrics.accuracy_score(gt, cluster_assignments)
 
 
-    def on_epoch_start(self, trainer, pl_module):
-        if self.on_start:
-            self.evaluate_clustering(trainer, pl_module)
+# class ClusteringEvaluationCallback(pl.callbacks.Callback):
+#     def __init__(self, on_start=True, **kwargs):
+#         super(ClusteringEvaluationCallback, self).__init__()
+#         self.on_start = on_start
+#         self.idx = -1
+#         self.kwargs = kwargs
+#         if 'ds_type' not in self.kwargs:
+#             self.kwargs['ds_type'] = 'all'
 
-    def on_epoch_end(self, trainer, pl_module):
-        if not self.on_start:
-            self.evaluate_clustering(trainer, pl_module)
+#     def evaluate_clustering(self, trainer, pl_module):
+#         if trainer.datamodule is not None:
+#             if isinstance(trainer.datamodule, MNISTDataModule):
+#                 datamodule = trainer.datamodule
+#             elif trainer.datamodule.hasattr('base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
+#                 datamodule = trainer.datamodule.base_datamodule
+#             else: 
+#                 datamodule = BasicDataModule(pl_module.train_ds, pl_module.valid_ds, batch_size=pl_module.batch_size)
+#             if self.kwargs['ds_type'] == 'train':
+#                 ds = datamodule.train_ds
+#             elif self.kwargs['ds_type'] == 'valid':
+#                 ds = datamodule.valid_ds
+#             elif self.kwargs['ds_type'] == 'all':
+#                 ds = datamodule.all_ds 
+#             else:
+#                 raise Exception(f"ds_type can be only 'train', 'valid', 'all'")
+#             dl = DataLoader(ds, batch_size=1024, shuffle=False)
+#             gt, labels, _ = pl_module.cluster_data(dl=dl, **self.kwargs)
+#         else:
+#             gt, labels, _ = pl_module.cluster_data(**self.kwargs)
+#         nmi, acc2 = metrics.normalized_mutual_info_score(labels, gt), clustering_accuracy(gt, labels)
+#         acc = cluster_acc(labels, gt)
+#         ari = metrics.adjusted_rand_score(labels, gt)
+#         prefix = self.kwargs['ds_type'] + '_'
+#         if self.kwargs['ds_type'] == 'all':
+#             prefix = ''
+#         pl_module.log(prefix + 'NMI', nmi, on_epoch=True)
+#         pl_module.log(prefix + 'ACC', acc, on_epoch=True)
+#         pl_module.log(prefix + 'ACC2', acc2, on_epoch=True)
+#         pl_module.log(prefix + 'ARI', ari, on_epoch=True)
+
+
+#     def on_epoch_start(self, trainer, pl_module):
+#         if self.on_start:
+#             self.evaluate_clustering(trainer, pl_module)
+
+#     def on_epoch_end(self, trainer, pl_module):
+#         if not self.on_start:
+#             self.evaluate_clustering(trainer, pl_module)
 
 
 # def get_autoencoder(n_neurons, batch_norm=False):
@@ -321,16 +329,20 @@ class SimpleAutoencoder(pl.LightningModule):
     def cluster_data(self, dl=None, method='gmm-full', n_init=3, ds_type=None):
         self.eval()
         if not dl:
-            dl = DataLoader(self.all_ds, batch_size=2048, shuffle=False, num_workers=12)
+            dl = DataLoader(self.all_ds, batch_size=2048, shuffle=False, num_workers=1)
+        X_encoded, true_labels = self.encode_dl(dl)
         if method == 'kmeans':
             clustering_algo = KMeans(n_clusters=self.k)
         elif method == 'gmm-full':
             clustering_algo = GaussianMixture(n_components=self.k, covariance_type='full', n_init=n_init)
         elif method == 'gmm-diag':
             clustering_algo = GaussianMixture(n_components=self.k, covariance_type='diag', n_init=n_init)
+        elif method == 'best_of_10':
+            gmm = best_of_n_gmm_ray(X_encoded, n_clusters=self.k, covariance_type='full', n=10)
+            predicted_labels = gmm.predict(X_encoded)
+            return true_labels, predicted_labels, X_encoded
         else:
             raise ArgumentError(f"Incorrect methpd arg {method}, can only be one of 'kmeans', 'gmm-full', or 'gmm-diag'")
-        X_encoded, true_labels = self.encode_dl(dl)
         # import pdb; pdb.set_trace()
         predicted_labels = clustering_algo.fit_predict(X_encoded)
         return true_labels, predicted_labels, X_encoded
@@ -343,6 +355,7 @@ class VaDE(nn.Module):
         super(VaDE, self).__init__()
         self.k = k
         self.logger = logger
+        self.device = device
         self.covariance_type = covariance_type
         self.multivariate_latent = multivariate_latent
         self.n_neurons, self.batch_norm = n_neurons, batch_norm
@@ -370,18 +383,30 @@ class VaDE(nn.Module):
         self.out_dist = BernoulliDistribution(n_neurons[1], n_neurons[0])
         self.model_params = list(self.encoder.parameters()) + list(self.latent_dist.parameters()) + list(self.decoder.parameters()) + list(self.out_dist.parameters())
         if pretrain_model is not None and init_gmm is not None:
-            self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_))
-            self.mu_c.data = torch.Tensor(init_gmm.means_).to(device)
-            if self.covariance_type == 'diag':
-                self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt().to(device)
-            elif self.covariance_type == 'full':
-                self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1))).to(device)
-            self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
-            self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
-            self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
-            self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
+            self.load_parameters(pretrain_model, init_gmm)
+            # self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_))
+            # self.mu_c.data = torch.Tensor(init_gmm.means_).to(device)
+            # if self.covariance_type == 'diag':
+            #     self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt().to(device)
+            # elif self.covariance_type == 'full':
+            #     self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1))).to(device)
+            # self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
+            # self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
+            # self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
+            # self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
         self.component_distribution = self._component_distribution()
-        # self.comp_dists = self._comp_dists()
+
+    def load_parameters(self, pretrain_model, init_gmm):
+        self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_)).to(self.device)
+        self.mu_c.data = torch.Tensor(init_gmm.means_).to(self.device)
+        if self.covariance_type == 'diag':
+            self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt().to(self.device)
+        elif self.covariance_type == 'full':
+            self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1))).to(self.device)
+        self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
+        self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
+        self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
+        self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
 
     def log(self, metric, value, **kwargs):
         if self.training:
@@ -422,20 +447,11 @@ class VaDE(nn.Module):
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
         return z_dist, log_q_c_z
    
-
-    # @property
     def _component_distribution(self):
         if self.covariance_type == 'diag':
             return D.Independent(D.Normal(self.mu_c, self.sigma_c), 1)
         elif self.covariance_type == 'full':
             return D.MultivariateNormal(self.mu_c, scale_tril=self.scale_tril_c)
-
-    # # @property p
-    # def _comp_dists(self):
-    #     if self.covariance_type == 'diag':
-    #         return [D.Independent(D.Normal(self.mu_c[i], self.sigma_c[i]), 1) for i in range(self.k)]
-    #     elif self.covariance_type == 'full':
-    #         return  [D.MultivariateNormal(self.mu_c[i], scale_tril=self.scale_tril_c[i]) for i in range(self.k)]
     
     def shared_step(self, bx):
         x = self.encoder(bx)
