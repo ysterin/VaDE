@@ -1,0 +1,3 @@
+n_triplets:
+  desc: number of triplets used for training
+  value: 2000

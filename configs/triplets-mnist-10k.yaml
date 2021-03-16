@@ -1,0 +1,102 @@
+layer1:
+  desc: number of neurons in layer 1
+  value: 500
+layer2:
+  desc: number of neurons in layer 2
+  value: 500
+layer3:
+  desc: number of neurons in layer 3
+  value: 2000
+hid_dim:
+  desc: number of neurons in layer 4
+  value: 10
+dropout: 
+  desc: dropout rate
+  value: 0 
+activation:
+  desc: activation function used 
+  value: relu
+lr:
+  desc: learning rate used
+  value: 0.002
+lr_gmm:
+  desc: learning rate for GMM parameters
+  value: 0.002
+weight_decay:
+  desc: weight decay in optimizer
+  value: 0.0
+pretrain_lr: 
+  desc: pretraining learning rate
+  value: 0.0003
+latent_logvar_bias_init:
+  desc:
+  value: -3.0
+batch_size:
+  desc: batch size
+  value: 256
+batch_norm:
+  desc: whether to use batch normalization
+  value: false
+epochs:
+  desc: number of epochs
+  value: 200
+warmup_epochs:
+  desc: 
+  value: 10
+pretrain_epochs:
+  desc: number of epochs for pretraining
+  value: 150 
+data_size:
+  desc: size of the data subset to use
+  value: 10000
+  #n_triplets:
+        #  desc: number of triplets that are used for triplet loss.
+  #  value: 10000
+n_samples_for_triplets:
+  desc: number of samples used for triplets
+  value: null
+dataset:
+  desc: dataset to use - mnist or fmnist
+  value: mnist
+init_gmm_file:
+  desc: file with saved GaussianMixture model to use for initialization
+  value: null
+pretrained_model_file:
+  desc: file of saved pretrained Autoencoder for initialization
+  value: null
+autoencoder_loss_alpha:
+  desc: coefficient of autoencoder loss in toral loss
+  value: 1.0
+triplet_loss_alpha:
+  desc: coefficient of triplet loss
+  value: 0.
+triplet_loss_margin:
+  desc: margin used in triplet loss
+  value: 1.0
+triplet_loss_alpha_kl:
+  desc: coefficient of triplet kl distance loss
+  value: 0.2
+triplet_loss_margin_kl:
+  desc: margin used in kl distance loss function
+  value: 200
+triplet_loss_alpha_cls:
+  desc: coefficient of triplets loss on the cluster labels
+  value: 20
+triplet_loss_margin_cls:
+  desc: margin used in that triplet loss
+  value: 0.6
+multiariate_latent:
+  desc: if true, use LowRankMultivariateNormal as the posterior distribution in the latent space
+  value: false
+rank:  
+  desc: rank of LowRankMultivariateNormal distribution used (if used)
+  value: null
+covariance_type:
+  desc: covariance type of Gaussians in the Gaussian Mixture model
+  value: full
+device: 
+  desc: device to use - cuda (for gpu) or cpu
+  value: cuda
+seed: 
+  desc: seed to use for random numbers
+  value: 42
