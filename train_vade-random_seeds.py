@@ -9,7 +9,8 @@ import argparse
 # from triplet_vade import TripletVaDE
 #from triplet_vade import TripletVaDE
 from pl_modules import PLVaDE
-from autoencoder import SimpleAutoencoder, VaDE, ClusteringEvaluationCallback, cluster_acc
+from autoencoder import SimpleAutoencoder, VaDE
+from callbacks import ClusteringEvaluationCallback, cluster_acc
 
 #pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
