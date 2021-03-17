@@ -11,11 +11,11 @@ parameters:
   lr:
     value: 0.0003
   epochs:
-    min: 100
-    max: 500
+    min: 50
+    max: 200
     distribution: int_uniform
   data_size:
-    value: 10000
+    value: null 
   dataset:
     value: mnist
   batch_size:

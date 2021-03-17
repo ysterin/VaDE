@@ -230,10 +230,10 @@ class TripletVaDE(pl.LightningModule):
         return pretrained_model, init_gmm
         
     def train_dataloader(self):
-        return DataLoader(self.train_triplet_ds, batch_size=self.batch_size, num_workers=8)
+        return DataLoader(self.train_triplet_ds, batch_size=self.batch_size, num_workers=0)
 
     def val_dataloader(self):
-        return DataLoader(self.valid_triplet_ds, batch_size=self.batch_size, num_workers=8)
+        return DataLoader(self.valid_triplet_ds, batch_size=self.batch_size, num_workers=0)
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW([{'params': self.model.model_params},

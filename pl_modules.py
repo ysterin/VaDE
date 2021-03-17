@@ -68,7 +68,6 @@ class PLVaDE(pl.LightningModule):
         self.save_hyperparameters()
         self.bs = batch_size
         pretrain_model, init_gmm = self.init_params(n_neurons, batch_norm, k, pretrain_epochs)
-        # pretrain_model, init_gmm = None, None
         self.pretrained_model, self.init_gmm = [pretrain_model], init_gmm
         self.model = VaDE(n_neurons=n_neurons, k=k, device=device, activation=activation, dropout=dropout,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log,
@@ -122,7 +121,6 @@ class PLVaDE(pl.LightningModule):
                 init_gmm = pickle.load(file)
         return pretrain_model, init_gmm
         
-
     def train_dataloader(self):
         return DataLoader(self.train_ds, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=1, pin_memory=True)
                         #   num_workers=4, pin_memory=True, persistent_workers=False, prefetch_factor=8)

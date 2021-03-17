@@ -30,10 +30,10 @@ batch_norm:
   value: false
 epochs:
   desc: number of epochs
-  value: 50
+  value: 100
 pretrain_epochs:
   desc: number of epochs for pretraining
-  value: 100
+  value: 150
 data_size:
   desc: size of the data subset to use
   value: 10000
