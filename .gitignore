@@ -11,6 +11,7 @@ triplets_model VADE/
 wandb/
 __pycache__/
 *.log
+saved_model*/
 *log*.txt
 **/logs
 *.ckpt
