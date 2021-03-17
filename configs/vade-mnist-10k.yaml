@@ -30,7 +30,7 @@ batch_norm:
   value: false
 epochs:
   desc: number of epochs
-  value: 200
+  value: 50
 pretrain_epochs:
   desc: number of epochs for pretraining
   value: 100

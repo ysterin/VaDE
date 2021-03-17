@@ -142,7 +142,8 @@ class TripletsDataModule(pl.LightningDataModule):
             n_triplets_valid = n_triplets
         self.n_triplets_valid = n_triplets_valid
     
-    def setup(self, stage_name=None):
+    def prepare_data(self, stage_name=None):
+        self.base_datamodule.prepare_data()
         self.train_ds = TripletDataset(*get_data_and_targets(self.base_datamodule.train_ds), data_size=self.n_samples_for_triplets, 
                                                 max_samples=self.n_triplets)
         self.valid_ds = TripletDataset(*get_data_and_targets(self.base_datamodule.valid_ds), data_size=self.n_samples_for_triplets,
@@ -167,7 +168,8 @@ class CombinedDataModule(pl.LightningDataModule):
             n_triplets_valid = n_triplets
         self.n_triplets_valid = n_triplets_valid
     
-    def setup(self, stage_name=None):
+    def prepare_data(self):
+        self.base_datamodule.prepare_data()
         self.train_ds = CombinedDataset(self.base_datamodule.train_ds, data_size=self.n_samples_for_triplets,
                                         max_triplets=self.n_triplets, seed=self.seed)
         self.valid_ds = CombinedDataset(self.base_datamodule.valid_ds, data_size=self.n_samples_for_triplets,

@@ -47,6 +47,7 @@ def main():
                     pretrained_model_file=config.pretrained_model_file,
                     device=config.device,
                     covariance_type=config.covariance_type,
+                    do_pretrain=True,
                     init_gmm_file=config.init_gmm_file,
                     multivariate_latent=config.multivariate_latent,
                     rank=config.rank)

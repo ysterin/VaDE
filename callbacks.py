@@ -1,4 +1,5 @@
 from torch.utils.data import DataLoader, Dataset, IterableDataset, TensorDataset
+import torch
 from torch import nn, distributions
 from torch.nn import functional as F
 from torch import distributions as D
@@ -13,46 +14,92 @@ from autoencoder import SimpleAutoencoder, VaDE
 from utils import best_of_n_gmm_ray
 from scipy.optimize import linear_sum_assignment as linear_assignment
 from data_modules import MNISTDataModule, BasicDataModule
-
+from pathlib import Path
+from pytorch_lightning.callbacks import EarlyStopping
+import os
 import ray
+from data_modules import MNISTDataModule, BasicDataModule
+
+class LoadPretrained(pl.Callback):
+    def __init__(self, save_dir, seed):
+        super(LoadPretrained, self).__init__()
+        self.save_dir, self.seed = save_dir, seed
+        
+    def on_fit_start(self, trainer, pl_module):
+        if trainer.datamodule:
+            if isinstance(trainer.datamodule, MNISTDataModule):
+                datamodule = trainer.datamodule
+                dataset, data_size = datamodule.dataset, datamodule.data_size
+            elif hasattr(trainer.datamodule, 'base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
+                datamodule = trainer.datamodule.base_datamodule
+                dataset, data_size = datamodule.dataset, datamodule.data_size
+            else:
+                dataset, data_size = pl_module.dataset, pl_module.data_size
+        else: 
+            dataset, data_size = pl_module.dataset, pl_module.data_size
+        self.path = Path(self.save_dir) / f"{dataset}-{data_size}-seed={self.seed}.h5"
+        pl_module.model.load_state_dict(torch.load(self.path))
+
 
 class PretrainingCallback(pl.Callback):
-    def __init__(self, epochs=None, lr=None, n_clusters=10, n_gmm_restarts=10):
+    def __init__(self, epochs=None, lr=None, n_clusters=10, n_gmm_restarts=10, seed=None, save_dir=None, early_stop=False):
         super(PretrainingCallback, self).__init__()
+        if not seed:
+            seed = torch.seed() % 2**32
+        self.seed = seed
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        self.save_dir = save_dir
         self.epochs, self.lr, self.n_clusters = epochs, lr, n_clusters
         self.n_gmm_restarts = n_gmm_restarts
         self.datamodule = None
+        self.callbacks = []
+        if early_stop:
+            self.callbacks.append(EarlyStopping(monitor='valid/loss', patience=20))
 
-    # def on_init_end(self, trainer):
-    #     self.datamodule = trainer.datamodule
+    # def save_pretrained(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+    #     if not self.save_dir:
+    #         return
+    #     save_dir = Path(self.save_dir) 
+    #     os.makedirs(save_dir, exist_ok=True)
+    #     torch.save(pl_module.model.state_dict(), save_dir / f"{}seed={self.seed}.h5")
 
     def on_fit_start(self, trainer, pl_module):
         pretrain_model = SimpleAutoencoder(pl_module.hparams['n_neurons'], 
-                                          lr=self.lr if self.lr else pl_module.hparams['pretrain_lr'], 
-                                          activation=pl_module.hparams['activation'], 
-                                          dropout=pl_module.hparams['dropout'])
+                                           lr=self.lr if self.lr else pl_module.hparams['pretrain_lr'], 
+                                           activation=pl_module.hparams['activation'], 
+                                           dropout=pl_module.hparams['dropout'])
         pretrain_trainer = pl.Trainer(gpus=1, 
                                       max_epochs=self.epochs if self.epochs else pl_module.hparams['pretrain_epochs'], 
-                                      progress_bar_refresh_rate=50)
+                                      progress_bar_refresh_rate=50, 
+                                      callbacks=self.callbacks)
         datamodule = None
         if trainer.datamodule:
             if isinstance(trainer.datamodule, MNISTDataModule):
                 datamodule = trainer.datamodule
-            elif trainer.datamodule.hasattr('base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
+                dataset, data_size = datamodule.dataset, datamodule.data_size
+            elif hasattr(trainer.datamodule, 'base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
                 datamodule = trainer.datamodule.base_datamodule
-            else: 
-                datamodule = BasicDataModule(pl_module.train_ds, pl_module.valid_ds, batch_size=pl_module.batch_size)
-                # pretrain_model.train_dataloader = lambda: DataLoader(pl_module.valid_ds, batch_size=256, shuffle=False, num_workers=8)
-                # pretrain_model.val_dataloader = pl_module.val_dataloader
-        
+                dataset, data_size = datamodule.dataset, datamodule.data_size
+            else:
+                datamodule = BasicDataModule(pl_module.train_ds, pl_module.valid_ds, batch_size=pl_module.hparams['batch_size'])
+                dataset, data_size = pl_module.dataset, pl_module.data_size
+        else: 
+            datamodule = BasicDataModule(pl_module.train_ds, pl_module.valid_ds, batch_size=pl_module.hparams['batch_size'])
+            dataset, data_size = pl_module.dataset, pl_module.data_size
         pretrain_trainer.fit(pretrain_model, datamodule=datamodule)
-
         X_encoded = pretrain_model.encode_ds(datamodule.all_ds)
         ray.init(ignore_reinit_error=True)
         init_gmm = best_of_n_gmm_ray(X_encoded, self.n_clusters, covariance_type=pl_module.hparams['covariance_type'], 
                                      n=self.n_gmm_restarts, n_init=3)
+        targets = np.array([x[1] for x in datamodule.all_ds])
+        accuracy = cluster_acc(init_gmm.predict(X_encoded), targets)
         pl_module.model.load_parameters(pretrain_model=pretrain_model, init_gmm=init_gmm)
-
+        
+        if self.save_dir:
+            save_dir = Path(self.save_dir) 
+            os.makedirs(save_dir, exist_ok=True)
+            torch.save(pl_module.model.state_dict(), save_dir / f"{dataset}-{data_size}-seed={self.seed}.h5")
 
 def cluster_acc(Y_pred, Y):
     assert Y_pred.shape == Y.shape
@@ -83,7 +130,7 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
         if trainer.datamodule is not None:
             if isinstance(trainer.datamodule, MNISTDataModule):
                 datamodule = trainer.datamodule
-            elif trainer.datamodule.hasattr('base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
+            elif hasattr(trainer.datamodule, 'base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
                 datamodule = trainer.datamodule.base_datamodule
             else: 
                 datamodule = BasicDataModule(pl_module.train_ds, pl_module.valid_ds, batch_size=pl_module.batch_size)

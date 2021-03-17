@@ -14,8 +14,8 @@ defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'batch_size': 256, 
             'device': 'cuda',
             # 'batch_norm': False,
-            'clustering_method': 'best_of_10',
-            'epochs':5,
+            'clustering_method': 'gmm-full',
+            'epochs':100,
             'dataset': 'mnist',
             'data_size': 10000,
             'data_random_state': 42}
@@ -29,8 +29,8 @@ def main():
                               lr=config.lr, batch_size=config.batch_size)
     logger = pl.loggers.WandbLogger()
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, 
-                         callbacks=[ClusteringEvaluationCallback(ds_type='all', on_start=False, method=config.clustering_method),
-                         ClusteringEvaluationCallback(ds_type='all', on_start=False, method='gmm-full', postfix='_single')],
+                         callbacks=[ClusteringEvaluationCallback(ds_type='all', on_start=False, method=config.clustering_method)],
+                        #  ClusteringEvaluationCallback(ds_type='all', on_start=False, method='gmm-full', postfix='_single')],
                          max_epochs=config.epochs)
 
     trainer.fit(model)

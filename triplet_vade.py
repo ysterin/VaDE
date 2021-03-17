@@ -141,6 +141,7 @@ class TripletVaDE(pl.LightningModule):
                  lr_gmm = None,
                  batch_size=256, 
                  device='cuda', 
+                 do_pretrain=True,
                  pretrain_epochs=50, 
                  pretrained_model_file=None, 
                  init_gmm_file=None,
@@ -165,7 +166,10 @@ class TripletVaDE(pl.LightningModule):
             self.hparams['lr_gmm'] = lr
         self.batch_size = batch_size
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
-        pretrain_model, init_gmm = self.init_params()
+        if self.hparams['do_pretrain']:
+            pretrain_model, init_gmm = self.init_params()
+        else:
+            pretrain_model, init_gmm = None, None
         self.model = VaDE(n_neurons=n_neurons, k=k, device=device, covariance_type=covariance_type,
                           latent_logvar_bias_init=latent_logvar_bias_init,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)

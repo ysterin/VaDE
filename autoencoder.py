@@ -382,19 +382,9 @@ class VaDE(nn.Module):
         self.decoder = decoder[:-1]
         self.out_dist = BernoulliDistribution(n_neurons[1], n_neurons[0])
         self.model_params = list(self.encoder.parameters()) + list(self.latent_dist.parameters()) + list(self.decoder.parameters()) + list(self.out_dist.parameters())
+        self._component_distribution = None
         if pretrain_model is not None and init_gmm is not None:
             self.load_parameters(pretrain_model, init_gmm)
-            # self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_))
-            # self.mu_c.data = torch.Tensor(init_gmm.means_).to(device)
-            # if self.covariance_type == 'diag':
-            #     self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt().to(device)
-            # elif self.covariance_type == 'full':
-            #     self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1))).to(device)
-            # self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
-            # self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
-            # self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
-            # self.out_dist.probs[0].load_state_dict(pretrain_model.decoder[-1][0].state_dict())
-        self.component_distribution = self._component_distribution()
 
     def load_parameters(self, pretrain_model, init_gmm):
         self.mixture_logits.data = torch.Tensor(np.log(init_gmm.weights_)).to(self.device)
@@ -403,6 +393,7 @@ class VaDE(nn.Module):
             self.sigma_c.data = torch.Tensor(init_gmm.covariances_).sqrt().to(self.device)
         elif self.covariance_type == 'full':
             self.scale_tril_c.data = torch.Tensor(np.linalg.inv(init_gmm.precisions_cholesky_).transpose((0, 2, 1))).to(self.device)
+        # self.component_distribution = self._component_distribution()
         self.encoder.load_state_dict(pretrain_model.encoder[:-1].state_dict())
         self.decoder.load_state_dict(pretrain_model.decoder[:-1].state_dict())
         self.latent_dist.mu_fc.load_state_dict(pretrain_model.encoder[-1].state_dict())
@@ -447,12 +438,16 @@ class VaDE(nn.Module):
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
         return z_dist, log_q_c_z
    
-    def _component_distribution(self):
-        if self.covariance_type == 'diag':
-            return D.Independent(D.Normal(self.mu_c, self.sigma_c), 1)
-        elif self.covariance_type == 'full':
-            return D.MultivariateNormal(self.mu_c, scale_tril=self.scale_tril_c)
+    @property
+    def component_distribution(self):
+        if self._component_distribution is None:
+            if self.covariance_type == 'diag':
+                self._component_distribution = D.Independent(D.Normal(self.mu_c, self.sigma_c), 1)
+            elif self.covariance_type == 'full':
+                self._component_distribution = D.MultivariateNormal(self.mu_c, scale_tril=self.scale_tril_c)
+        return self._component_distribution
     
+
     def shared_step(self, bx):
         x = self.encoder(bx)
         z_dist = self.latent_dist(x)
