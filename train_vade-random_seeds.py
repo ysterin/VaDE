@@ -70,7 +70,7 @@ def run_with_seed(seed):
 
 
 SEED = 42
-N_RUNS = 3
+N_RUNS = 10
 
 def main():
     ray.init(ignore_reinit_error=True)

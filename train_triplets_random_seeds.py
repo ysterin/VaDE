@@ -87,7 +87,7 @@ def train_seed(seed):
     trainer.fit(triplets_model, datamodule)
     wandb.join()
 
-N_RUNS = 3
+N_RUNS = 10
 SEED = 42
 def main(n_runs=N_RUNS):
     ray.init(ignore_reinit_error=True)
