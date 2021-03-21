@@ -7,7 +7,7 @@ import wandb
 # from triplet_vade import TripletVaDE
 from triplet_vade import TripletVaDE
 from autoencoder import SimpleAutoencoder, VaDE
-from callbacks import ClusteringEvaluationCallback, cluster_acc
+from callbacks import ClusteringEvaluationCallback, cluster_acc, PretrainingCallback
 
 pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
@@ -69,8 +69,13 @@ def main():
                                  covariance_type=config.covariance_type)
 
     logger = pl.loggers.WandbLogger()
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=1, 
-                         callbacks=[ClusteringEvaluationCallback(), ClusteringEvaluationCallback(ds_type='train'), ClusteringEvaluationCallback(ds_type='valid')], max_epochs=config.epochs)
+    
+    callbacks = [PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, early_stop=False, save_dir='saved_models'),
+                ClusteringEvaluationCallback(), 
+                ClusteringEvaluationCallback(ds_type='train'), 
+                ClusteringEvaluationCallback(ds_type='valid')]
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=20, 
+                         callbacks=callbacks, max_epochs=config.epochs)
 
     trainer.fit(triplets_model)
 
