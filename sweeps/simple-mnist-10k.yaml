@@ -12,7 +12,7 @@ parameters:
     value: 0.0003
   epochs:
     min: 100
-    max: 500
+    max: 250
     distribution: int_uniform
   data_size:
     value: 10000

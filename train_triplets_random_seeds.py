@@ -78,7 +78,7 @@ def train_seed(seed):
                                     n_triplets=config.n_triplets, batch_size=config.batch_size, seed=seed)
     logger = pl.loggers.WandbLogger(project='VaDE Triplets')
     callbacks = [ClusteringEvaluationCallback(), 
-                LoadPretrained(seed=seed, save_dir='saved_models')]
+                LoadPretrained(seed=seed, save_dir='saved_models2')]
                 # PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, seed=seed, early_stop=True, save_dir='saved_models')]
 
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=1, 

@@ -61,7 +61,7 @@ def run_with_seed(seed):
     datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size, seed=seed)
     callbacks = [ClusteringEvaluationCallback(), 
                 #  LoadPretrained(seed=seed, save_dir='saved_models')]
-                 PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, seed=seed, early_stop=True, save_dir='saved_models')]
+                 PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, seed=seed, early_stop=False, save_dir='saved_models2')]
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, log_every_n_steps=1,
                          callbacks=callbacks, max_epochs=config.epochs)
 
