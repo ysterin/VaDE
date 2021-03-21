@@ -8,7 +8,7 @@ import wandb
 from triplet_vade import TripletVaDE
 from autoencoder import SimpleAutoencoder, VaDE
 from callbacks import ClusteringEvaluationCallback, cluster_acc, PretrainingCallback
-
+from data_modules import MNISTDataModule, CombinedDataModule
 pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
 defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
@@ -18,8 +18,10 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
            'batch_norm': False,
            'weight_decay': 0.0,
            'device': 'cuda',
+           'activation': 'relu', 
+           'dropout': 0.0,
            'do_pretrain': False,
-           'pretrain_epochs': 50,
+           'pretrain_epochs': 200,
            'latent_logvar_bias_init': 0.,
            'autoencoder_loss_alpha': 1.0,
            'triplet_loss_margin': 0.5, 
@@ -69,7 +71,9 @@ def main():
                                  covariance_type=config.covariance_type)
 
     logger = pl.loggers.WandbLogger()
-    
+    base_datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size)
+    datamodule = CombinedDataModule(base_datamodule, n_samples_for_triplets=config.n_samples_for_triplets, 
+                                    n_triplets=config.n_triplets, batch_size=config.batch_size)
     callbacks = [PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, early_stop=False, save_dir='saved_models'),
                 ClusteringEvaluationCallback(), 
                 ClusteringEvaluationCallback(ds_type='train'), 
@@ -77,7 +81,7 @@ def main():
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=20, 
                          callbacks=callbacks, max_epochs=config.epochs)
 
-    trainer.fit(triplets_model)
+    trainer.fit(triplets_model, datamodule)
 
 
 if __name__ == '__main__':
