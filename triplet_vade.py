@@ -139,6 +139,8 @@ class TripletVaDE(pl.LightningModule):
                  lr=1e-3, 
                  pretrain_lr=3e-4,
                  lr_gmm = None,
+                 activation='relu',
+                 dropout=0.0,
                  batch_size=256, 
                  device='cuda', 
                  do_pretrain=True,
@@ -171,7 +173,7 @@ class TripletVaDE(pl.LightningModule):
        # pretrain_model, init_gmm = None, None
         self.model = VaDE(n_neurons=n_neurons, k=k, device=device, covariance_type=covariance_type,
                           latent_logvar_bias_init=latent_logvar_bias_init,
-                          pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
+                          pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log, activation=activation, dropout=dropout)
         lr_gmm = ifnone(lr_gmm, lr)
 
     def prepare_data(self):
