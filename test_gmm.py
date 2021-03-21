@@ -26,7 +26,7 @@ def fit_gmm(x, n_clusters=10, covariance_type='full', n_init=1, random_state=Non
     gmm.fit(x)
     log_likelihood = gmm.score(x)
     kl_score = kl_mixture_score(gmm, x)
-    return gmm, kl_score
+    return gmm, log_likelihood, kl_score
 
 def best_of_n_gmm_ray(x, n_clusters=10, n=10, covariance_type='full', n_init=1):
     ray.init(ignore_reinit_error=True)

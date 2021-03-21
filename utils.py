@@ -11,7 +11,7 @@ def kl_mixture_score(gmm: GaussianMixture, X_encoded: np.array, eps=1e-8):
     return kl_div.mean()
 
 @ray.remote
-def fit_gmm(x, n_clusters=10, covariance_type='full', n_init=3, random_state=None):
+def fit_gmm(x, n_clusters=10, covariance_type='full', n_init=5, random_state=None):
     gmm = GaussianMixture(n_components=n_clusters, covariance_type=covariance_type, n_init=n_init, random_state=random_state)
     gmm.fit(x)
     # score = gmm.score(x)

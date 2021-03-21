@@ -61,7 +61,7 @@ import ray
 
 class PLVaDE(pl.LightningModule):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, dropout=0., activation='relu', k=10, 
-                 lr=1e-3, pretrain_lr=2e-3, seed=None, do_pretrain=True,
+                 lr=1e-3, pretrain_lr=2e-3, do_pretrain=True,
                  device='cuda', pretrain_epochs=50, batch_size=1024, pretrained_model_file=None, init_gmm_file=None,
                  covariance_type='diag', data_size=None, data_random_seed=42, multivariate_latent=False, rank=3, dataset='mnist'):
         super(PLVaDE, self).__init__()

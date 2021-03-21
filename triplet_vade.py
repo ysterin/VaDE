@@ -166,10 +166,9 @@ class TripletVaDE(pl.LightningModule):
             self.hparams['lr_gmm'] = lr
         self.batch_size = batch_size
         self.n_neurons, self.pretrain_epochs, self.batch_norm = n_neurons, pretrain_epochs, batch_norm
-        if self.hparams['do_pretrain']:
-            pretrain_model, init_gmm = self.init_params()
-        else:
-            pretrain_model, init_gmm = None, None
+       # if self.hparams['do_pretrain']:
+        pretrain_model, init_gmm = self.init_params()
+       # pretrain_model, init_gmm = None, None
         self.model = VaDE(n_neurons=n_neurons, k=k, device=device, covariance_type=covariance_type,
                           latent_logvar_bias_init=latent_logvar_bias_init,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log)
@@ -209,6 +208,8 @@ class TripletVaDE(pl.LightningModule):
     
     def init_params(self):
         if not self.hparams['pretrained_model_file']:
+            if not self.hparams['do_pretrain']:
+                return None, None
             pretrained_model = self.pretrain_model()
         else:
             pretrained_model = SimpleAutoencoder(self.n_neurons)
