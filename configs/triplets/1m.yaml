@@ -1,3 +1,5 @@
 n_triplets:
   desc: number of triplets used for training
   value: 1000000
+epochs:
+  value: 1000

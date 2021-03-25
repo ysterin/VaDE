@@ -79,7 +79,7 @@ class BasicDataModule(pl.LightningDataModule):
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=self.num_workers)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=self.num_workers)
@@ -119,7 +119,7 @@ class MNISTDataModule(pl.LightningDataModule):
         self.all_ds = ConcatDataset([self.train_ds, self.valid_ds])
                 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=1)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=1, shuffle=True)
     
     def val_dataloader(self):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=1)
@@ -150,7 +150,7 @@ class TripletsDataModule(pl.LightningDataModule):
                                                 max_samples=self.n_triplets_valid)
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=0)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=0, shuffle=True)
     
     def val_dataloader(self):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=0)
@@ -180,7 +180,7 @@ class CombinedDataModule(pl.LightningDataModule):
         #                                         max_samples=self.n_triplets_valid)
 
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=0)
+        return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=0, shuffle=True)
     
     def val_dataloader(self):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=0)

@@ -236,10 +236,10 @@ def get_encoder_decoder(n_neurons, batch_norm=True, activation='relu', dropout=0
 
 
 class SimpleAutoencoder(pl.LightningModule):
-    def __init__(self, n_neurons, dropout=0., activation='relu', lr=1e-3, batch_size=256, dataset='mnist', data_size=None, data_random_state=42):
+    def __init__(self, n_neurons, dropout=0., activation='relu', lr=3e-4, batch_size=256, dataset='mnist', data_size=None, data_random_state=42):
         super(SimpleAutoencoder, self).__init__()
         self.save_hyperparameters()
-        self.batch_size = batch_size
+        self.batch_size = batch_size 
         self.k = n_neurons[-1]
         self.encoder, self.decoder = get_encoder_decoder(n_neurons, batch_norm=False, dropout=dropout, activation=activation)
 
@@ -342,7 +342,7 @@ class SimpleAutoencoder(pl.LightningModule):
             predicted_labels = gmm.predict(X_encoded)
             return true_labels, predicted_labels, X_encoded
         else:
-            raise ArgumentError(f"Incorrect methpd arg {method}, can only be one of 'kmeans', 'gmm-full', or 'gmm-diag'")
+            raise ArgumentError(f"Incorrect methpd arg {method}, can only be one of 'best_of_10', 'kmeans', 'gmm-full', or 'gmm-diag'")
         # import pdb; pdb.set_trace()
         predicted_labels = clustering_algo.fit_predict(X_encoded)
         return true_labels, predicted_labels, X_encoded
@@ -458,7 +458,10 @@ class VaDE(nn.Module):
         x_dist = self.out_dist(self.decoder(z))
         #import pdb; pdb.set_trace()
         #x_recon_loss = - x_dist.log_prob(bx).sum(dim=-1)
-        x_recon_loss = torch.binary_cross_entropy_with_logits(x_dist.logits, bx).sum(dim=-1)
+        # x_recon_loss = torch.binary_cross_entropy_with_logits(x_dist.logits, bx).sum(dim=-1)
+        x_recon_loss = torch.nn.functional.binary_cross_entropy(x_dist.probs, bx, reduction='none').sum(dim=-1)
+        # x_recon_loss = torch.nn.functional.binary_cross_entropy(x_dist.probs, (bx > 0.5).float(), reduction='none').sum(dim=-1)
+        import pdb; pdb.set_trace()
         ###################################
         log_p_z_c = self.component_distribution.log_prob(z.unsqueeze(1))
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
@@ -468,9 +471,10 @@ class VaDE(nn.Module):
         kl_divergences = _kl_divergence(z_dist, self.component_distribution)
         kl_div1 = torch.einsum('ij,ij->i', kl_divergences, q_c_z)
         kl_div2 = torch.einsum('ij,ij->i', q_c_z, log_q_c_z - self.mixture_logits.log_softmax(dim=-1))
+        posterior_entropy = - torch.einsum('ij,ij->i', q_c_z, log_q_c_z)
         kl_loss = kl_div1 + kl_div2
-        
-        loss = x_recon_loss + kl_loss
+        alpha = 1
+        loss = x_recon_loss + alpha * kl_loss
 
         if loss.isnan().any():
             import pdb; pdb.set_trace()
@@ -480,7 +484,8 @@ class VaDE(nn.Module):
                   'kl_loss': kl_loss.mean(),
                 #   'bce_loss': bce_loss.mean(), 
                   'kl_div_mixture': kl_div2.mean(), 
-                  'kl_div_components': kl_div1.mean()}
+                  'kl_div_components': kl_div1.mean(), 
+                  'posterior_entropy': posterior_entropy.mean()}
                 #   'z_dist': z_dist, 'z': z}
         return result
 

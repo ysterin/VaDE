@@ -32,7 +32,8 @@ defaults = {'layer1': 500, 'layer2': 500, 'layer3': 2000, 'hid_dim': 10,
             'rank': 5,
             'covariance_type': 'full', 
             'epochs':300,
-            'seed': 42}
+            'seed': 42,
+            'data_random_state': 42}
 
 def run_with_seed(seed):
     torch.manual_seed(seed)
@@ -45,8 +46,9 @@ def run_with_seed(seed):
                     activation=config.activation,
                     lr=config.lr,
                     pretrain_lr=config.pretrain_lr,
-                    data_size=config.data_size,
-                    dataset=config.dataset,
+                    # data_size=config.data_size,
+                    # dataset=config.dataset,
+                    # data_random_seed=config.data_random_state,
                     batch_size=config.batch_size,
                     pretrain_epochs=config.pretrain_epochs, 
                     pretrained_model_file=config.pretrained_model_file,
@@ -58,18 +60,19 @@ def run_with_seed(seed):
                     rank=config.rank)
 
     logger = pl.loggers.WandbLogger(project='VADE')
-    datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size, seed=seed)
+    datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size, seed=config.data_random_state)
     callbacks = [ClusteringEvaluationCallback(), 
                 #  LoadPretrained(seed=seed, save_dir='saved_models')]
-                 PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, seed=seed, early_stop=False, save_dir='saved_models2')]
-    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, log_every_n_steps=1,
+                 PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, seed=seed, 
+                                     log=False, early_stop=False, save_dir='saved_models')]
+    trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=50, log_every_n_steps=10,
                          callbacks=callbacks, max_epochs=config.epochs)
 
-    trainer.fit(model, datamodule)
+    trainer.fit(model, datamodule=datamodule)
     wandb.join()
 
 
-SEED = 42
+SEED = 42 
 N_RUNS = 10
 
 def main():

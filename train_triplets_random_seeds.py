@@ -35,6 +35,7 @@ defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
            'n_samples_for_triplets': None, 
            'data_size': None, 
            'dataset': 'mnist',
+           'data_random_state': 42,
            'seed': 42,
            'n_samples_for_triplets': None,
            'pretrained_model_file': None, 
@@ -73,7 +74,7 @@ def train_seed(seed):
                                  triplet_loss_alpha_cls=config.triplet_loss_alpha_cls,
                                  warmup_epochs=config.warmup_epochs,
                                  covariance_type=config.covariance_type)
-    base_datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size, seed=seed)
+    base_datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size, seed=config.data_random_state)
     datamodule = CombinedDataModule(base_datamodule, n_samples_for_triplets=config.n_samples_for_triplets, 
                                     n_triplets=config.n_triplets, batch_size=config.batch_size, seed=seed)
     logger = pl.loggers.WandbLogger(project='VaDE Triplets')
@@ -89,18 +90,15 @@ def train_seed(seed):
 
 N_RUNS = 10
 SEED = 42
+
 def main(n_runs=N_RUNS):
     ray.init(ignore_reinit_error=True)
     seed_sequence = np.random.SeedSequence(SEED)
     streams = [np.random.default_rng(ss) for ss in seed_sequence.spawn(n_runs)]
-    for i in range(n_runs):
+    for i in range(0, n_runs):
         seed = int.from_bytes(streams[i].bytes(4), 'big')
         train_seed(seed)
     ray.shutdown()
-
-    
-    
-
 
 
 if __name__ == '__main__':

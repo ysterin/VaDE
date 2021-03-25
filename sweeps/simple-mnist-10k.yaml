@@ -11,7 +11,7 @@ parameters:
   lr:
     value: 0.0003
   epochs:
-    min: 100
+    min: 150
     max: 250
     distribution: int_uniform
   data_size:
@@ -24,3 +24,5 @@ parameters:
     value: cuda
   k:
     value: 10
+  data_random_state:
+    value: 42
