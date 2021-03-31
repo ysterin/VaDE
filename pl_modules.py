@@ -63,7 +63,8 @@ class PLVaDE(pl.LightningModule):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, dropout=0., activation='relu', k=10, 
                  lr=1e-3, lr_gmm=1e-3, pretrain_lr=2e-3, do_pretrain=True, warmup_epochs=10, latent_logvar_bias_init=0,
                  device='cuda', pretrain_epochs=50, batch_size=1024, pretrained_model_file=None, init_gmm_file=None,
-                 covariance_type='diag', data_size=None, data_random_seed=42, multivariate_latent=False, rank=3, dataset='mnist'):
+                 covariance_type='diag', data_size=None, data_random_seed=42, multivariate_latent=False,
+                  rank=3, dataset='mnist', alpha_kl=1.0):
         super(PLVaDE, self).__init__()
         self.save_hyperparameters()
         self.bs = batch_size
@@ -72,7 +73,8 @@ class PLVaDE(pl.LightningModule):
         self.pretrained_model, self.init_gmm = [pretrain_model], init_gmm
         self.model = VaDE(n_neurons=n_neurons, k=k, device=device, activation=activation, dropout=dropout,
                           pretrain_model=pretrain_model, init_gmm=init_gmm, logger=self.log, latent_logvar_bias_init=latent_logvar_bias_init,
-                          covariance_type=covariance_type, multivariate_latent=multivariate_latent, rank=rank)
+                          covariance_type=covariance_type, multivariate_latent=multivariate_latent, rank=rank,
+                          alpha_kl=alpha_kl)
         
     def prepare_data(self):
         if self.hparams['dataset'] == 'mnist':
@@ -135,8 +137,10 @@ class PLVaDE(pl.LightningModule):
                                  {'params': self.model.gmm_params, 'lr': self.hparams['lr_gmm']}],
                                   self.hparams['lr'], weight_decay=0.00)
         # opt = torch.optim.AdamW(list(self.parameters())[3:], self.hparams['lr'], weight_decay=0.00)
-        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch:  (epoch+1)/(self.hparams['warmup_epochs'] + 1) if epoch < self.hparams['warmup_epochs'] else 0.9**(epoch//10))
-        return [opt], [sched]
+        # sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch:  (epoch+1)/(self.hparams['warmup_epochs'] + 1) if epoch < self.hparams['warmup_epochs'] else 0.9**(epoch//10))
+        # sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda epoch: min(1e-3 * np.exp(epoch*0.5), 0.9 ** (epoch // 10)))
+        return [opt]
+        # return [opt], [sched]
     
     def training_step(self, batch, batch_idx):
         bx, by = batch

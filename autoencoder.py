@@ -350,12 +350,13 @@ class SimpleAutoencoder(pl.LightningModule):
 
 class VaDE(nn.Module):
     def __init__(self, n_neurons=[784, 512, 256, 10], batch_norm=False, dropout=0., activation='relu', k=10, 
-                 lr=1e-3, device='cuda', rank=3, latent_logvar_bias_init=-5.,
+                 lr=1e-3, device='cuda', rank=3, latent_logvar_bias_init=-5., alpha_kl=1.,
                  pretrain_model=None, init_gmm=None, logger=None, covariance_type='diag', multivariate_latent=False):
         super(VaDE, self).__init__()
         self.k = k
         self.logger = logger
         self.device = device
+        self.alpha_kl = alpha_kl
         self.covariance_type = covariance_type
         self.multivariate_latent = multivariate_latent
         self.n_neurons, self.batch_norm = n_neurons, batch_norm
@@ -461,7 +462,6 @@ class VaDE(nn.Module):
         # x_recon_loss = torch.binary_cross_entropy_with_logits(x_dist.logits, bx).sum(dim=-1)
         x_recon_loss = torch.nn.functional.binary_cross_entropy(x_dist.probs, bx, reduction='none').sum(dim=-1)
         # x_recon_loss = torch.nn.functional.binary_cross_entropy(x_dist.probs, (bx > 0.5).float(), reduction='none').sum(dim=-1)
-        import pdb; pdb.set_trace()
         ###################################
         log_p_z_c = self.component_distribution.log_prob(z.unsqueeze(1))
         log_q_c_z = torch.log_softmax(log_p_z_c + self.mixture_logits, dim=-1)  # dims: (bs, k)
@@ -473,8 +473,8 @@ class VaDE(nn.Module):
         kl_div2 = torch.einsum('ij,ij->i', q_c_z, log_q_c_z - self.mixture_logits.log_softmax(dim=-1))
         posterior_entropy = - torch.einsum('ij,ij->i', q_c_z, log_q_c_z)
         kl_loss = kl_div1 + kl_div2
-        alpha = 1
-        loss = x_recon_loss + alpha * kl_loss
+        # kl_loss = kl_div1 - kl_div2
+        loss = x_recon_loss + self.alpha_kl * kl_loss
 
         if loss.isnan().any():
             import pdb; pdb.set_trace()
