@@ -5,8 +5,8 @@ import pytorch_lightning as pl
 import numpy as np
 
 
-class TripletDataset(IterableDataset):
-    def __init__(self, data, labels, transform=None, data_size=None, max_samples=None, seed=None):
+class TripletIterableDataset(IterableDataset):
+    def __init__(self, data, labels, data_size=None, max_samples=None, seed=None):
         super(TripletDataset, self).__init__()
         assert len(data) == len(labels)
         self.seed = seed
@@ -43,6 +43,49 @@ class TripletDataset(IterableDataset):
                    'positive': self.data_dict[anchor_label][positive_idx], 
                    'negative': self.data_dict[neg_label][negative_idx]}
 
+class TripletDataset(Dataset):
+    def __init__(self, data, labels, data_size=None, max_samples=10000, seed=None):
+        super(TripletDataset, self).__init__()
+        assert len(data) == len(labels)
+        self.seed = seed
+        self.rng = np.random.Generator(np.random.PCG64(seed=self.seed))
+        if data_size and data_size < len(data):
+            idxs = self.rng.choice(len(data), size=data_size, replace=False)
+            data, labels = data[idxs], labels[idxs]
+        self.data_size = len(data)
+        self.data = data
+        self.labels = labels
+        self.label_set = list(set(labels.numpy()))
+        self.data_dict = {lbl: [self.data[i] for i in range(self.data_size) if self.labels[i]==lbl] \
+                            for lbl in self.label_set}
+        self.n_classes = len(self.label_set)
+        self.class_sizes = {lbl: len(self.data_dict[lbl]) for lbl in self.label_set}
+        if not max_samples:
+            max_samples = sum([n*(n-1)//2 * (self.data_size-n) for n in self.class_sizes.values()])
+        self.max_samples = max_samples
+        self.samples = self.generate_samples()
+
+    def __getitem__(self, idx):
+        return self.samples[idx]
+
+    def __len__(self):
+        return self.max_samples        
+
+    def generate_samples(self):
+        self.rng = np.random.Generator(np.random.PCG64(seed=self.seed))
+        samples = []
+        while len(samples) < self.max_samples:
+            anchor_label, neg_label = self.rng.choice(self.label_set, size=2, replace=False)
+            try:
+                anchor_idx, positive_idx = self.rng.choice(self.class_sizes[anchor_label], size=2, replace=False)
+            except ValueError as e:
+                continue
+            negative_idx = self.rng.choice(self.class_sizes[neg_label], size=1)[0]
+            samples.append({'anchor': self.data_dict[anchor_label][anchor_idx], 
+                   'positive': self.data_dict[anchor_label][positive_idx], 
+                   'negative': self.data_dict[neg_label][negative_idx]})
+        return samples
+
 
 class CombinedDataset(Dataset):
     def __init__(self, dataset, transform=None, data_size=None, max_triplets=None, seed=42):
@@ -51,7 +94,7 @@ class CombinedDataset(Dataset):
         targets = torch.stack([dataset[i][1] for i in range(len(dataset))], dim=0)
         if not max_triplets:
             max_triplets = len(dataset)
-        self.triplet_dataset = TripletDataset(self.data, targets, transform, data_size, max_samples=max_triplets, seed=seed)
+        self.triplet_dataset = TripletIterableDataset(self.data, targets, transform, data_size, max_samples=max_triplets, seed=seed)
         self.triplets_iterator = iter(self.triplet_dataset)
     
     def __len__(self):
@@ -132,7 +175,8 @@ def get_data_and_targets(dataset):
 
 
 class TripletsDataModule(pl.LightningDataModule):
-    def __init__(self, base_datamodule, n_samples_for_triplets=None, n_triplets=None, n_triplets_valid=None, batch_size=256):
+    def __init__(self, base_datamodule, n_samples_for_triplets=None, n_triplets=None, n_triplets_valid=None, 
+                 batch_size=256, seed=None):
         super(TripletsDataModule, self).__init__()
         self.base_datamodule = base_datamodule
         self.batch_size = batch_size
@@ -141,13 +185,17 @@ class TripletsDataModule(pl.LightningDataModule):
         if n_triplets_valid is None:
             n_triplets_valid = n_triplets
         self.n_triplets_valid = n_triplets_valid
+        if seed:
+            self.seed = seed
+        else:
+            self.seed = torch.random.seed() % (2 ** 32)
     
     def prepare_data(self, stage_name=None):
         self.base_datamodule.prepare_data()
         self.train_ds = TripletDataset(*get_data_and_targets(self.base_datamodule.train_ds), data_size=self.n_samples_for_triplets, 
-                                                max_samples=self.n_triplets)
+                                                max_samples=self.n_triplets, seed=self.seed)
         self.valid_ds = TripletDataset(*get_data_and_targets(self.base_datamodule.valid_ds), data_size=self.n_samples_for_triplets,
-                                                max_samples=self.n_triplets_valid)
+                                                max_samples=self.n_triplets_valid, seed=self.seed)
 
     def train_dataloader(self):
         return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=0, shuffle=True)
