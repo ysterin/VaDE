@@ -3,8 +3,6 @@ import pytorch_lightning as pl
 import importlib
 import numpy as np
 import wandb
-# from triplet_vade import TripletVaDE
-# from triplet_vade import TripletVaDE
 from autoencoder import SimpleAutoencoder, VaDE
 from callbacks import  ClusteringEvaluationCallback, cluster_acc
 from data_modules import MNISTDataModule

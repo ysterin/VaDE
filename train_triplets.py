@@ -4,12 +4,10 @@ import pytorch_lightning as pl
 import importlib
 import numpy as np
 import wandb
-# from triplet_vade import TripletVaDE
 from triplet_vade import TripletVaDE
 from autoencoder import SimpleAutoencoder, VaDE
 from callbacks import ClusteringEvaluationCallback, cluster_acc, PretrainingCallback
 from data_modules import MNISTDataModule, CombinedDataModule
-pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
 
 defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
            'lr': 2e-3, 
