@@ -21,7 +21,7 @@ import os
 import ray
 from data_modules import MNISTDataModule, BasicDataModule
 
-
+# claculates accuacy of clustering
 def cluster_acc(Y_pred, Y):
     assert Y_pred.shape == Y.shape
     D = max(Y_pred.max(), Y.max())+1
@@ -36,7 +36,14 @@ def clustering_accuracy(gt, cluster_assignments):
     cluster_assignments = mat.argmax(axis=1)[cluster_assignments]
     return metrics.accuracy_score(gt, cluster_assignments)
 
-
+'''
+Callback for evaluating the clustering of clustering models.
+on_start: whether to evaluate on start of every epoch or on the end.
+postfix: postfix for the name of the metric when loggin to WandB.
+in kwargs:
+    ds_dtype: what dataset to perform evaluate the clustering on - train, validation or both.
+    parameters for the clustering process, depending on the model evaluated.
+'''
 class ClusteringEvaluationCallback(pl.callbacks.Callback):
     def __init__(self, on_start=True, postfix='', **kwargs):
         super(ClusteringEvaluationCallback, self).__init__()
@@ -88,31 +95,15 @@ class ClusteringEvaluationCallback(pl.callbacks.Callback):
             self.evaluate_clustering(trainer, pl_module)
 
 
-class LoadPretrained(pl.Callback):
-    def __init__(self, save_dir, seed):
-        super(LoadPretrained, self).__init__()
-        self.save_dir, self.seed = save_dir, seed
-        
-    def on_fit_start(self, trainer, pl_module):
-        if trainer.datamodule:
-            if isinstance(trainer.datamodule, MNISTDataModule):
-                datamodule = trainer.datamodule
-                dataset, data_size = datamodule.dataset, datamodule.data_size
-            elif hasattr(trainer.datamodule, 'base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
-                datamodule = trainer.datamodule.base_datamodule
-                dataset, data_size = datamodule.dataset, datamodule.data_size
-            else:
-                dataset, data_size = pl_module.dataset, pl_module.data_size
-        else: 
-            dataset, data_size = pl_module.dataset, pl_module.data_size
-        cov_type = pl_module.hparams['covariance_type']
-        self.path = Path(self.save_dir) / f"{dataset}-{data_size}-{cov_type}-seed={self.seed}.h5"
-        pl_module.model.load_state_dict(torch.load(self.path))
-        # pl_module.model.latent_dist.logvar_fc.bias.data += 5.
-
-
+'''
+A model for training a SimpleAutoencoder, as a pretraining step for training VaDE model.
+also saves the trained model in save_dir, to compare different hyperparameters.
+epochs: number of epochs for pretraining.
+n_gmm_restarts: n_restarts for training the Gaussian Mixture Model for clustering.
+log: whether to log the clustering accuracy while training.
+'''
 class PretrainingCallback(pl.Callback):
-    def __init__(self, epochs=None, lr=None, n_clusters=10, n_gmm_restarts=10, seed=None, save_dir=None, log=False, early_stop=False):
+    def __init__(self, epochs=50, lr=None, n_clusters=10, n_gmm_restarts=10, seed=None, save_dir=None, log=False, early_stop=False):
         super(PretrainingCallback, self).__init__()
         if not seed:
             seed = torch.seed() % 2**32
@@ -129,13 +120,6 @@ class PretrainingCallback(pl.Callback):
             self.callbacks.append(EarlyStopping(monitor='valid/loss', patience=20))
         if log:
             self.callbacks.append(ClusteringEvaluationCallback(on_start=False, method='best_of_10', ds_type='all'))
-
-    # def save_pretrained(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
-    #     if not self.save_dir:
-    #         return
-    #     save_dir = Path(self.save_dir) 
-    #     os.makedirs(save_dir, exist_ok=True)
-    #     torch.save(pl_module.model.state_dict(), save_dir / f"{}seed={self.seed}.h5")
    
     def on_fit_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         pretrain_model = SimpleAutoencoder(pl_module.hparams['n_neurons'], 
@@ -175,4 +159,31 @@ class PretrainingCallback(pl.Callback):
             save_dir = Path(self.save_dir) 
             os.makedirs(save_dir, exist_ok=True)
             torch.save(pl_module.model.state_dict(), save_dir / f"{dataset}-{data_size}-{cov_type}-seed={self.seed}.h5")
+
+
+'''
+A callback to load pretrained SimpleAutoencoder model from file.
+save_dir: directory of the saved model.
+seed: seed of the trained Autoencoder.
+'''
+class LoadPretrained(pl.Callback):
+    def __init__(self, save_dir, seed):
+        super(LoadPretrained, self).__init__()
+        self.save_dir, self.seed = save_dir, seed
+        
+    def on_fit_start(self, trainer, pl_module):
+        if trainer.datamodule:
+            if isinstance(trainer.datamodule, MNISTDataModule):
+                datamodule = trainer.datamodule
+                dataset, data_size = datamodule.dataset, datamodule.data_size
+            elif hasattr(trainer.datamodule, 'base_datamodule') and isinstance(trainer.datamodule.base_datamodule, MNISTDataModule):
+                datamodule = trainer.datamodule.base_datamodule
+                dataset, data_size = datamodule.dataset, datamodule.data_size
+            else:
+                dataset, data_size = pl_module.dataset, pl_module.data_size
+        else: 
+            dataset, data_size = pl_module.dataset, pl_module.data_size
+        cov_type = pl_module.hparams['covariance_type']
+        self.path = Path(self.save_dir) / f"{dataset}-{data_size}-{cov_type}-seed={self.seed}.h5"
+        pl_module.model.load_state_dict(torch.load(self.path))
 

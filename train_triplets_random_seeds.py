@@ -4,15 +4,12 @@ import pytorch_lightning as pl
 import importlib
 import numpy as np
 import wandb
-# from triplet_vade import TripletVaDE
 from triplet_vade import TripletVaDE
 from autoencoder import SimpleAutoencoder, VaDE
 from data_modules import MNISTDataModule, BasicDataModule, CombinedDataModule
 from callbacks import PretrainingCallback, LoadPretrained, ClusteringEvaluationCallback, cluster_acc
 import ray
 
-#pretriained_model = 'pretrained_models/radiant-surf-28/autoencoder-epoch=55-loss=0.011.ckpt'
-#
 defaults = {'layer1': 512, 'layer2': 512, 'layer3': 2048, 'hid_dim': 10,
            'lr': 2e-3, 
            'lr_gmm': 2e-3, 
@@ -77,10 +74,10 @@ def train_seed(seed):
     base_datamodule = MNISTDataModule(dataset=config.dataset, data_size=config.data_size, bs=config.batch_size, seed=config.data_random_state)
     datamodule = CombinedDataModule(base_datamodule, n_samples_for_triplets=config.n_samples_for_triplets, 
                                     n_triplets=config.n_triplets, batch_size=config.batch_size, seed=seed)
+    
     logger = pl.loggers.WandbLogger(project='VaDE Triplets')
-    callbacks = [ClusteringEvaluationCallback(), 
-                LoadPretrained(seed=seed, save_dir='saved_models2')]
-                # PretrainingCallback(epochs=config.pretrain_epochs, lr=config.pretrain_lr, seed=seed, early_stop=True, save_dir='saved_models')]
+    callbacks = [ClusteringEvaluationCallback(), LoadPretrained(seed=seed, save_dir='saved_models2')]
+
 
     trainer = pl.Trainer(gpus=1, logger=logger, progress_bar_refresh_rate=10, log_every_n_steps=1, 
                          callbacks=callbacks, max_epochs=config.epochs)

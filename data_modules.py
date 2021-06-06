@@ -5,6 +5,9 @@ import pytorch_lightning as pl
 import numpy as np
 
 
+'''
+A dataset that iterates on triplets from a dataset, sampled randomly with some seed.
+'''
 class TripletIterableDataset(IterableDataset):
     def __init__(self, data, labels, data_size=None, max_samples=None, seed=None):
         super(TripletDataset, self).__init__()
@@ -26,7 +29,6 @@ class TripletIterableDataset(IterableDataset):
             max_samples = sum([n*(n-1)//2 * (self.data_size-n) for n in self.class_sizes.values()])
         self.max_samples = max_samples
 
-
     def __len__(self):
         return self.max_samples        
 
@@ -43,6 +45,10 @@ class TripletIterableDataset(IterableDataset):
                    'positive': self.data_dict[anchor_label][positive_idx], 
                    'negative': self.data_dict[neg_label][negative_idx]}
 
+
+'''
+A Triplet dataset has a prepecified number of generated triplets.
+'''
 class TripletDataset(Dataset):
     def __init__(self, data, labels, data_size=None, max_samples=10000, seed=None):
         super(TripletDataset, self).__init__()
@@ -87,6 +93,10 @@ class TripletDataset(Dataset):
         return samples
 
 
+'''
+A dataset that combines a dataset and a triplets iterator over that dataset, such that it returns both a sample an a triplet
+from the dataset.
+'''
 class CombinedDataset(Dataset):
     def __init__(self, dataset, transform=None, data_size=None, max_triplets=None, seed=42):
         super(CombinedDataset, self).__init__()
@@ -114,6 +124,9 @@ class CombinedDataset(Dataset):
         return (sample, triplet)
 
 
+'''
+A Pytorch Lightning Datamodule that combines a training and validation sets.
+'''
 class BasicDataModule(pl.LightningDataModule):
     def __init__(self, train_ds, valid_ds, batch_size=256, num_workers=1):
         super(BasicDataModule, self).__init__()
@@ -128,6 +141,9 @@ class BasicDataModule(pl.LightningDataModule):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=self.num_workers)
 
 
+'''
+A data module for MNIST or FashionMnist datasets.
+'''
 class MNISTDataModule(pl.LightningDataModule):
     def __init__(self, path='data', bs=256, dataset='mnist', data_size=None, seed=42):
         super(MNISTDataModule, self).__init__()
@@ -151,11 +167,6 @@ class MNISTDataModule(pl.LightningDataModule):
             return TensorDataset(X, ds.targets)
         self.train_ds, self.valid_ds = map(to_tensor_dataset, [self.train_ds, self.valid_ds])
         if self.data_size is not None:
-            # n_sample = self.data_size
-            # to_subset = lambda ds: torch.utils.data.random_split(ds, 
-            #                                                      [n_sample, len(ds) - n_sample],
-            #                                                      torch.Generator().manual_seed(42))[0]
-            # self.train_ds = to_subset(self.train_ds)
             self.train_ds = torch.utils.data.random_split(self.train_ds, 
                                                           [self.data_size, len(self.train_ds) - self.data_size],
                                                           torch.Generator().manual_seed(self.seed))[0]
@@ -167,13 +178,16 @@ class MNISTDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=1)
 
-
+# seperates the dataset to data samples and target labels.
 def get_data_and_targets(dataset):
     data = torch.stack([dataset[i][0] for i in range(len(dataset))], dim=0)
     targets = torch.stack([dataset[i][1] for i in range(len(dataset))], dim=0)
     return data, targets
 
 
+'''
+A Pytorch Lightning Datamodule for triplets of samples from some base_datamodule.
+'''
 class TripletsDataModule(pl.LightningDataModule):
     def __init__(self, base_datamodule, n_samples_for_triplets=None, n_triplets=None, n_triplets_valid=None, 
                  batch_size=256, seed=None):
@@ -203,7 +217,9 @@ class TripletsDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.valid_ds, batch_size=self.batch_size, num_workers=0)
 
-
+'''
+A Datamodule for cmobined dataset with triplets.
+'''
 class CombinedDataModule(pl.LightningDataModule):
     def __init__(self, base_datamodule, n_samples_for_triplets=None, n_triplets=None, 
                  n_triplets_valid=None, batch_size=256, seed=42):
@@ -222,10 +238,6 @@ class CombinedDataModule(pl.LightningDataModule):
                                         max_triplets=self.n_triplets, seed=self.seed)
         self.valid_ds = CombinedDataset(self.base_datamodule.valid_ds, data_size=self.n_samples_for_triplets,
                                         max_triplets=self.n_triplets_valid, seed=self.seed)
-        # self.train_ds = TripletDataset(*get_data_and_targets(self.base_datamodule.train_ds), data_size=self.n_samples_for_triplets, 
-        #                                         max_samples=self.n_triplets)
-        # self.valid_ds = TripletDataset(*get_data_and_targets(self.base_datamodule.valid_ds), data_size=self.n_samples_for_triplets,
-        #                                         max_samples=self.n_triplets_valid)
 
     def train_dataloader(self):
         return DataLoader(self.train_ds, batch_size=self.batch_size, num_workers=0, shuffle=True)
